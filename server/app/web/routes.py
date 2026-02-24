@@ -899,8 +899,8 @@ async def api_debug_web_toggle(
     """Toggle web debug logging via HTMX."""
     from app.database import async_session
 
-    body = await request.json()
-    enabled = body.get("enabled", False)
+    form = await request.form()
+    enabled = form.get("enabled", "false").lower() in ("true", "1")
 
     async with async_session() as db:
         await _save_setting(db, "web_debug_enabled", "true" if enabled else "false", category="debug")
@@ -1026,8 +1026,8 @@ async def api_agent_debug_toggle(
     from app.models.server import Server
     import secrets as _secrets
 
-    body = await request.json()
-    enabled = body.get("enabled", False)
+    form = await request.form()
+    enabled = form.get("enabled", "false").lower() in ("true", "1")
 
     async with async_session() as db:
         result = await db.execute(select(Server).where(Server.id == server_id))
