@@ -214,10 +214,18 @@ def _collect_controller(
     vd_response = {}
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}/vall", "show", "all", "J"])
-        vd_response = _get_response_data(raw)
-        logger.debug("VD response keys for /c%d: %s", cx, list(vd_response.keys()))
-        controller_report["virtual_drives"] = parse_virtual_drives(vd_response)
-        logger.info("Collected %d VDs for /c%d", len(controller_report["virtual_drives"]), cx)
+        controllers_arr = raw.get("Controllers", [])
+        logger.info("VD vall returned %d Controllers entries for /c%d", len(controllers_arr), cx)
+        all_vds = []
+        for ci, ctrl_entry in enumerate(controllers_arr):
+            response = ctrl_entry.get("Response Data", {})
+            if ci == 0:
+                vd_response = response  # save for PD fallback
+                logger.info("VD response keys[0] for /c%d: %s", cx, list(response.keys())[:10])
+            vds = parse_virtual_drives(response)
+            all_vds.extend(vds)
+        controller_report["virtual_drives"] = all_vds
+        logger.info("Collected %d VDs for /c%d", len(all_vds), cx)
     except Exception as exc:
         msg = f"Failed to collect VDs for /c{cx}: {exc}"
         logger.error(msg)
@@ -226,10 +234,25 @@ def _collect_controller(
     # Physical drives + SMART
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}/eall/sall", "show", "all", "J"])
-        response = _get_response_data(raw)
-        logger.debug("PD response keys for /c%d: %s", cx, list(response.keys()))
-        controller_report["physical_drives"] = parse_physical_drives(response, cx)
-        logger.info("Collected %d PDs for /c%d (from eall/sall)", len(controller_report["physical_drives"]), cx)
+        controllers_arr = raw.get("Controllers", [])
+        logger.info("PD eall/sall returned %d Controllers entries for /c%d", len(controllers_arr), cx)
+        all_pds = []
+        for ci, ctrl_entry in enumerate(controllers_arr):
+            response = ctrl_entry.get("Response Data", {})
+            if ci == 0:
+                logger.info("PD response keys[0] for /c%d: %s", cx, list(response.keys())[:10])
+            pds = parse_physical_drives(response, cx)
+            all_pds.extend(pds)
+        # Deduplicate by (enclosure_id, slot_number)
+        seen = set()
+        deduped = []
+        for pd in all_pds:
+            key = (pd["enclosure_id"], pd["slot_number"])
+            if key not in seen:
+                seen.add(key)
+                deduped.append(pd)
+        controller_report["physical_drives"] = deduped
+        logger.info("Collected %d PDs for /c%d (from eall/sall)", len(deduped), cx)
     except Exception as exc:
         msg = f"Failed to collect PDs for /c{cx}: {exc}"
         logger.error(msg)
