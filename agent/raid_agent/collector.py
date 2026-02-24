@@ -211,11 +211,12 @@ def _collect_controller(
         errors.append(msg)
 
     # Virtual drives
+    vd_response = {}
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}/vall", "show", "all", "J"])
-        response = _get_response_data(raw)
-        logger.debug("VD response keys for /c%d: %s", cx, list(response.keys()))
-        controller_report["virtual_drives"] = parse_virtual_drives(response)
+        vd_response = _get_response_data(raw)
+        logger.debug("VD response keys for /c%d: %s", cx, list(vd_response.keys()))
+        controller_report["virtual_drives"] = parse_virtual_drives(vd_response)
         logger.info("Collected %d VDs for /c%d", len(controller_report["virtual_drives"]), cx)
     except Exception as exc:
         msg = f"Failed to collect VDs for /c{cx}: {exc}"
@@ -228,11 +229,17 @@ def _collect_controller(
         response = _get_response_data(raw)
         logger.debug("PD response keys for /c%d: %s", cx, list(response.keys()))
         controller_report["physical_drives"] = parse_physical_drives(response, cx)
-        logger.info("Collected %d PDs for /c%d", len(controller_report["physical_drives"]), cx)
+        logger.info("Collected %d PDs for /c%d (from eall/sall)", len(controller_report["physical_drives"]), cx)
     except Exception as exc:
         msg = f"Failed to collect PDs for /c{cx}: {exc}"
         logger.error(msg)
         errors.append(msg)
+
+    # Fallback: if no PDs found, try extracting from VD response ("PDs for VD N" keys)
+    if not controller_report["physical_drives"] and vd_response:
+        logger.info("No PDs from eall/sall, trying VD response fallback for /c%d", cx)
+        controller_report["physical_drives"] = parse_physical_drives(vd_response, cx)
+        logger.info("Collected %d PDs for /c%d (from VD fallback)", len(controller_report["physical_drives"]), cx)
 
     # Events since reboot
     try:
@@ -483,6 +490,18 @@ def parse_physical_drives(
     if not pds_raw:
         pds_raw = response.get("Drive Information", [])
 
+    # storcli7 format: individual drive keys like "/c0/e8/s0", "/c0/e8/s1"
+    if not pds_raw:
+        for key, val in response.items():
+            if key.startswith(f"/c{cx}/e") and "/s" in key and isinstance(val, list):
+                pds_raw.extend(val)
+
+    # Also check "PDs for VD N" keys (from vall response passed as fallback)
+    if not pds_raw:
+        for key, val in response.items():
+            if key.startswith("PDs for VD") and isinstance(val, list):
+                pds_raw.extend(val)
+
     # Also check for "Drive /cx/eall/sall" format
     if not pds_raw:
         for key, val in response.items():
@@ -492,6 +511,8 @@ def parse_physical_drives(
 
     if not isinstance(pds_raw, list):
         pds_raw = []
+
+    logger.debug("Found %d raw PD entries for /c%d", len(pds_raw), cx)
 
     for pd_raw in pds_raw:
         pd = _parse_single_pd(pd_raw, response, cx)
