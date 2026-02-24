@@ -11,6 +11,7 @@ import subprocess
 from typing import Optional, Union
 
 import requests
+import urllib3
 
 from raid_agent import __version__
 
@@ -111,6 +112,8 @@ def install_storcli(
 
     # Prepare SSL verification
     verify = ca_bundle if (ca_bundle and os.path.isfile(ca_bundle)) else ssl_verify
+    if not verify:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # Download RPM
     try:

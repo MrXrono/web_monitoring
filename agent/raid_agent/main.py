@@ -149,7 +149,11 @@ def ensure_storcli(config):
         api_key = config.get("api_key", "")
         if server_url and api_key:
             try:
-                storcli_path = install_storcli(server_url, api_key)
+                storcli_path = install_storcli(
+                    server_url, api_key,
+                    ssl_verify=config.get("ssl_verify", True),
+                    ca_bundle=config.get("ca_bundle", ""),
+                )
                 logger.info("storcli64 installed at %s", storcli_path)
             except Exception:
                 logger.exception("Failed to auto-install storcli64")
@@ -523,8 +527,8 @@ def main(argv=None):
     # Ensure storcli64 is available
     storcli_path = ensure_storcli(config)
     if storcli_path is None:
-        logger.error("storcli64 is not available. Cannot collect RAID data.")
-        return 1
+        logger.warning("storcli64 is not available. Agent will run but RAID data collection is disabled.")
+        storcli_path = ""
 
     # Handle --once mode
     if args.once:
