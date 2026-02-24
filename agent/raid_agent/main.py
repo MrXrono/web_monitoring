@@ -254,12 +254,19 @@ def run_collection_cycle(config, storcli_path):
     # Enrich with system info
     try:
         sys_info = get_system_info()
-        report["system_info"] = sys_info
     except Exception:
         logger.exception("Failed to collect system info")
-        report["system_info"] = {}
+        sys_info = {}
 
-    # Add agent metadata
+    # Add required top-level fields for server schema
+    report["hostname"] = sys_info.get("hostname", "unknown")
+    report["ip_address"] = sys_info.get("ip_address", "")
+    report["fqdn"] = sys_info.get("fqdn", "")
+    report["os"] = {
+        "name": sys_info.get("os_name", ""),
+        "version": sys_info.get("os_version", ""),
+        "kernel": sys_info.get("kernel", ""),
+    }
     report["agent_version"] = __version__
     report["collection_timestamp"] = time.time()
 
