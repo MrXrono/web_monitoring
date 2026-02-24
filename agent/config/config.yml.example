@@ -11,10 +11,12 @@ storcli_path: "/opt/MegaRAID/storcli/storcli64"
 # Collection interval in seconds (default: 600 = 10 minutes)
 collection_interval: 600
 
-# SSL certificate verification
+# SSL certificate verification (set to false for self-signed certificates)
 ssl_verify: true
 
 # Custom CA bundle path (optional, empty = system default)
+# Use this to specify a custom CA certificate for self-signed server certs:
+# ca_bundle: "/etc/raid-agent/server-ca.pem"
 ca_bundle: ""
 
 # Debug logging

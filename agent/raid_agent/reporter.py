@@ -12,6 +12,7 @@ import time
 from typing import Any, Dict, List, Optional, Union
 
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -72,6 +73,10 @@ def _build_session(
         session.verify = ca_bundle
     else:
         session.verify = ssl_verify
+
+    # Suppress InsecureRequestWarning when SSL verification is disabled
+    if not session.verify:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     return session
 

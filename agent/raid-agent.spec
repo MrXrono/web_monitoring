@@ -4,7 +4,10 @@
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
 %define log_dir     /var/log/raid-agent
-%define selinux_dir %{install_dir}/selinux
+%define selinux_dir %{install_dir}/raid_agent/selinux
+
+# Fallback for _unitdir if systemd-rpm-macros is not installed
+%{!?_unitdir: %define _unitdir /usr/lib/systemd/system}
 
 Name:           %{name}
 Version:        %{version}
