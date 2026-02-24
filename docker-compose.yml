@@ -24,6 +24,10 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      args:
+        - HTTP_PROXY=${BUILD_PROXY:-}
+        - HTTPS_PROXY=${BUILD_PROXY:-}
+        - ALL_PROXY=${BUILD_PROXY:-}
     container_name: rm-web
     env_file:
       - .env
