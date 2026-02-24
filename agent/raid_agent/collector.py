@@ -292,9 +292,11 @@ def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "alarm_status": hw_cfg.get("Alarm", ""),
         "patrol_read_status": response.get("Patrol Read", {}).get("PR Mode", ""),
-        "rebuild_rate": response.get("Rebuild Rate", {}).get(
-            "Rebuild Rate", ""
-        ) if isinstance(response.get("Rebuild Rate"), dict) else response.get("Rebuild Rate", ""),
+        "rebuild_rate": _safe_int(
+            response.get("Rebuild Rate", {}).get("Rebuild Rate", None)
+            if isinstance(response.get("Rebuild Rate"), dict)
+            else response.get("Rebuild Rate")
+        ) or None,
         "host_interface": hw_cfg.get("Host Interface", ""),
         "product_name": basics.get("Product Name", ""),
         "supported_raid_levels": _parse_supported_raids(response),
