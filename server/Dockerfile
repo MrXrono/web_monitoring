@@ -11,10 +11,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Copy static files to shared volume
-RUN mkdir -p /app/static && \
-    cp -r /app/app/static/* /app/static/ 2>/dev/null || true
+RUN mkdir -p /app/static
 
 EXPOSE 8000
 
-CMD ["python", "-m", "app.main"]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]
