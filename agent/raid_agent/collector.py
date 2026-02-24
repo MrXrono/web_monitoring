@@ -214,7 +214,9 @@ def _collect_controller(
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}/vall", "show", "all", "J"])
         response = _get_response_data(raw)
+        logger.debug("VD response keys for /c%d: %s", cx, list(response.keys()))
         controller_report["virtual_drives"] = parse_virtual_drives(response)
+        logger.info("Collected %d VDs for /c%d", len(controller_report["virtual_drives"]), cx)
     except Exception as exc:
         msg = f"Failed to collect VDs for /c{cx}: {exc}"
         logger.error(msg)
@@ -224,7 +226,9 @@ def _collect_controller(
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}/eall/sall", "show", "all", "J"])
         response = _get_response_data(raw)
+        logger.debug("PD response keys for /c%d: %s", cx, list(response.keys()))
         controller_report["physical_drives"] = parse_physical_drives(response, cx)
+        logger.info("Collected %d PDs for /c%d", len(controller_report["physical_drives"]), cx)
     except Exception as exc:
         msg = f"Failed to collect PDs for /c{cx}: {exc}"
         logger.error(msg)
@@ -365,6 +369,12 @@ def parse_virtual_drives(response: Dict[str, Any]) -> List[Dict[str, Any]]:
     if not isinstance(vds_raw, list):
         vds_raw = []
 
+    # storcli7 format: VDs are in keys like "/c0/v0", "/c0/v1" etc.
+    if not vds_raw:
+        for key, val in response.items():
+            if key.startswith("/c") and "/v" in key and isinstance(val, list):
+                vds_raw.extend(val)
+
     # Detailed VD info may be in separate keys like "VD0 Properties"
     vd_properties = {}
     for key, val in response.items():
@@ -375,8 +385,31 @@ def parse_virtual_drives(response: Dict[str, Any]) -> List[Dict[str, Any]]:
             except (ValueError, IndexError):
                 pass
 
+    # Also check "PDs for VD N" for drive count per VD
+    vd_pd_counts = {}
+    for key, val in response.items():
+        if key.startswith("PDs for VD") and isinstance(val, list):
+            try:
+                vd_num = int(key.split("PDs for VD")[1].strip())
+                vd_pd_counts[vd_num] = len(val)
+            except (ValueError, IndexError):
+                pass
+
     for idx, vd_raw in enumerate(vds_raw):
         vd = _parse_single_vd(vd_raw, idx, vd_properties.get(idx, {}))
+        # Fix number_of_drives from actual PD count if available
+        if vd["number_of_drives"] in (0, None):
+            vd_id = vd.get("vd_id", idx)
+            if vd_id in vd_pd_counts:
+                vd["number_of_drives"] = vd_pd_counts[vd_id]
+            elif idx in vd_pd_counts:
+                vd["number_of_drives"] = vd_pd_counts[idx]
+            else:
+                # Try from properties "Number of Drives Per Span"
+                props = vd_properties.get(vd_id, vd_properties.get(idx, {}))
+                ndrives = props.get("Number of Drives Per Span", props.get("Number of Drives", None))
+                if ndrives is not None:
+                    vd["number_of_drives"] = _safe_int(ndrives)
         vd_list.append(vd)
 
     return vd_list
@@ -419,7 +452,8 @@ def _parse_single_vd(
         "cache_policy": str(vd_raw.get("Cache", properties.get("Current Cache Policy", ""))),
         "consistent": str(vd_raw.get("Consist", "")),
         "strip_size": str(properties.get("Strip Size", vd_raw.get("Strip Size", ""))),
-        "number_of_drives": vd_raw.get("DGs", properties.get("Number of Drives", 0)),
+        "number_of_drives": _safe_int(properties.get("Number of Drives Per Span",
+            properties.get("Number of Drives", vd_raw.get("DGs", 0)))),
         "os_drive_name": str(properties.get("OS Drive Name", "")),
         "creation_date": str(properties.get("Creation Date", "")),
         "creation_time": str(properties.get("Creation Time", "")),
@@ -442,8 +476,12 @@ def parse_physical_drives(
     """
     pd_list = []
 
-    # PDs can be in several locations
+    # PDs can be in several locations depending on storcli version
     pds_raw = response.get("PD LIST", response.get("Physical Drives", []))
+
+    # storcli7 format: "Drive Information" key
+    if not pds_raw:
+        pds_raw = response.get("Drive Information", [])
 
     # Also check for "Drive /cx/eall/sall" format
     if not pds_raw:
