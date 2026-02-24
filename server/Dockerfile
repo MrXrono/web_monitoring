@@ -1,4 +1,7 @@
-FROM python:3.11-slim
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -7,7 +10,9 @@ WORKDIR /app
 RUN http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" all_proxy="" \
     apt-get update && \
     http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" all_proxy="" \
-    apt-get install -y --no-install-recommends libpq-dev gcc curl && \
+    apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev libpq-dev gcc curl && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
 # Install pysocks without proxy (needed for SOCKS5 proxy support in pip)
