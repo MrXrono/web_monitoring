@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from jose import jwt
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -171,7 +171,7 @@ async def login(
     authenticated = False
 
     if user and user.auth_source == "local" and user.password_hash:
-        if bcrypt.verify(payload.password, user.password_hash):
+        if _bcrypt.checkpw(payload.password.encode("utf-8"), user.password_hash.encode("utf-8")):
             if not user.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -81,7 +81,7 @@ async def register_agent(
 
     # Generate new API key
     raw_key = secrets.token_urlsafe(48)
-    key_hash = bcrypt.hash(raw_key)
+    key_hash = _bcrypt.hashpw(raw_key.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
     key_prefix = raw_key[:8]
 
     api_key = ApiKey(

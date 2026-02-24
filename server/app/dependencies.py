@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,7 +113,7 @@ async def verify_agent_key(
     matched_api_key = None
     for api_key_record in api_key_records:
         try:
-            if bcrypt.verify(raw_key, api_key_record.key_hash):
+            if _bcrypt.checkpw(raw_key.encode("utf-8"), api_key_record.key_hash.encode("utf-8")):
                 matched_api_key = api_key_record
                 break
         except Exception:

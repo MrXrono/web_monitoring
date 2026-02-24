@@ -47,9 +47,9 @@ check_requirements() {
 
 compose_cmd() {
     if docker compose version &>/dev/null 2>&1; then
-        docker compose -f "$COMPOSE_FILE" "$@"
+        docker compose --project-directory "$SCRIPT_DIR" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
     else
-        docker-compose -f "$COMPOSE_FILE" "$@"
+        docker-compose --project-directory "$SCRIPT_DIR" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"
     fi
 }
 

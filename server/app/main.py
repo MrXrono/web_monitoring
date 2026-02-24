@@ -122,7 +122,7 @@ def generate_self_signed_cert():
 
 async def create_initial_admin():
     """Create initial admin user if not exists."""
-    from passlib.hash import bcrypt
+    import bcrypt as _bcrypt
     from app.models.user import User
 
     async with async_session() as db:
@@ -131,9 +131,10 @@ async def create_initial_admin():
             return
 
         password = settings.ADMIN_PASSWORD or secrets.token_urlsafe(12)
+        password_hash = _bcrypt.hashpw(password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
         admin = User(
             username="admin",
-            password_hash=bcrypt.hash(password),
+            password_hash=password_hash,
             display_name="Administrator",
             auth_source="local",
             is_active=True,
