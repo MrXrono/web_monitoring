@@ -106,6 +106,9 @@ fi
 # Install the agent package itself
 cd %{install_dir} && %{install_dir}/venv/bin/pip install -e . 2>/dev/null || true
 
+# Create symlink for raid-agent command
+ln -sf %{install_dir}/venv/bin/raid-agent /usr/local/bin/raid-agent
+
 # Build and install SELinux policy module if semodule is available
 if command -v semodule >/dev/null 2>&1 && [ -f %{selinux_dir}/raid-agent.te ]; then
     echo "Building SELinux policy module..."
@@ -161,7 +164,8 @@ fi
 %systemd_postun_with_restart raid-agent.service
 
 if [ $1 -eq 0 ]; then
-    # Full uninstall: clean up virtualenv
+    # Full uninstall: clean up virtualenv and symlink
+    rm -f /usr/local/bin/raid-agent 2>/dev/null || true
     rm -rf %{install_dir}/venv 2>/dev/null || true
     rm -rf %{install_dir}/__pycache__ 2>/dev/null || true
     rm -rf %{install_dir}/raid_agent/__pycache__ 2>/dev/null || true
