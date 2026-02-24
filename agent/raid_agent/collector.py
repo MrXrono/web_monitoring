@@ -82,6 +82,29 @@ def run_storcli(storcli_path: str, args: List[str]) -> Dict[str, Any]:
     return data
 
 
+def _run_storcli_text(storcli_path: str, args: List[str]) -> str:
+    """Execute storcli64 and return raw text output (no JSON parsing).
+
+    Used for commands like 'show events' that may not produce valid JSON.
+    """
+    cmd = [storcli_path] + args
+    logger.debug("Executing (text mode): %s", " ".join(cmd))
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=STORCLI_TIMEOUT,
+        check=False,
+    )
+
+    stdout = result.stdout.strip()
+    if not stdout:
+        raise RuntimeError(f"storcli64 produced no output for command: {' '.join(args)}")
+
+    return stdout
+
+
 def _get_response_data(raw: Dict[str, Any], controller_idx: int = 0) -> Dict[str, Any]:
     """Extract Response Data from storcli JSON output.
 
@@ -273,10 +296,22 @@ def _collect_controller(
         )
         response = _get_response_data(raw)
         controller_report["events"] = parse_events(response)
-    except Exception as exc:
-        msg = f"Failed to collect events for /c{cx}: {exc}"
-        logger.warning(msg)
-        errors.append(msg)
+    except Exception:
+        # JSON events often fail on storcli7 — fall back to text parsing
+        try:
+            events_text = _run_storcli_text(
+                storcli_path,
+                [f"/c{cx}", "show", "events", "type=sincereboot"],
+            )
+            controller_report["events"] = parse_events_text(events_text)
+            logger.info(
+                "Parsed %d events from text output for /c%d",
+                len(controller_report["events"]), cx,
+            )
+        except Exception as exc:
+            msg = f"Failed to collect events for /c{cx}: {exc}"
+            logger.warning(msg)
+            errors.append(msg)
 
     # Battery / Capacitor
     try:
@@ -752,22 +787,31 @@ def _parse_cachevault_from_controller(response: Dict[str, Any]) -> Optional[Dict
     }
 
 
+_EVENT_CLASS_MAP = {
+    "-1": "progress",
+    "0": "info",
+    "1": "warning",
+    "2": "critical",
+    "3": "fatal",
+}
+
+
+def _map_event_severity(class_val: str) -> str:
+    """Map storcli event Class value to severity string."""
+    return _EVENT_CLASS_MAP.get(str(class_val).strip(), "info")
+
+
 def parse_events(response: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Parse controller events from storcli 'show events' response.
+    """Parse controller events from storcli JSON 'show events' response.
 
-    Args:
-        response: The Response Data dict from storcli.
-
-    Returns:
-        List of event dicts with timestamp, severity, description, and data.
+    Field names match agent_processor._record_events expectations:
+    event_id, event_time, severity, event_class, event_description, event_data.
     """
     events = []
 
-    # Events are typically in "Controller Event Log Entries"
     raw_events = response.get("Controller Event Log Entries", [])
 
     if not isinstance(raw_events, list):
-        # Sometimes it is a dict with numeric keys
         if isinstance(raw_events, dict):
             raw_events = list(raw_events.values())
         else:
@@ -777,18 +821,157 @@ def parse_events(response: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not isinstance(evt_raw, dict):
             continue
 
+        class_val = str(evt_raw.get("Class", evt_raw.get("Severity", "0")))
         event = {
-            "sequence_number": _safe_int(evt_raw.get("Seq Num", evt_raw.get("SeqNum", 0))),
-            "timestamp": str(evt_raw.get("Time Stamp", evt_raw.get("TimeStamp", ""))),
-            "severity": str(evt_raw.get("Class", evt_raw.get("Severity", "INFO"))),
-            "description": str(evt_raw.get("Event Description", evt_raw.get("Description", ""))),
-            "event_data": str(evt_raw.get("Event Data", evt_raw.get("Data", ""))),
-            "locale": str(evt_raw.get("Locale", "")),
+            "event_id": _safe_int(evt_raw.get("Seq Num", evt_raw.get("SeqNum", 0))),
+            "event_time": str(evt_raw.get("Time Stamp", evt_raw.get("TimeStamp", ""))),
+            "severity": _map_event_severity(class_val),
+            "event_class": class_val,
+            "event_description": str(evt_raw.get("Event Description", evt_raw.get("Description", ""))),
+            "event_data": evt_raw.get("Event Data"),
         }
         events.append(event)
 
-    logger.debug("Parsed %d events", len(events))
+    logger.debug("Parsed %d JSON events", len(events))
     return events
+
+
+def parse_events_text(text: str) -> List[Dict[str, Any]]:
+    """Parse controller events from storcli TEXT output.
+
+    Text format:
+        seqNum: 0x00007093
+        Time: Tue Feb 24 00:05:05 2026
+        Code: 0x0000009d
+        Class: 0
+        Locale: 0x08
+        Event Description: Battery relearn will start in 4 days
+        Event Data:
+        ===========
+        None
+
+    Returns:
+        List of event dicts matching agent_processor field names.
+    """
+    import re
+    from datetime import datetime as _dt
+
+    events = []
+    current: Dict[str, Any] = {}
+    in_event_data = False
+    event_data_lines: List[str] = []
+
+    for line in text.splitlines():
+        stripped = line.strip()
+
+        # New event block
+        if stripped.startswith("seqNum:"):
+            # Save previous event
+            if current:
+                _finalize_text_event(current, event_data_lines, events)
+            current = {}
+            event_data_lines = []
+            in_event_data = False
+            seq_hex = stripped.split(":", 1)[1].strip()
+            try:
+                current["event_id"] = int(seq_hex, 16) if seq_hex.startswith("0x") else int(seq_hex)
+            except ValueError:
+                current["event_id"] = 0
+            continue
+
+        if not current:
+            continue
+
+        if stripped.startswith("Time:"):
+            time_str = stripped.split(":", 1)[1].strip()
+            current["event_time"] = _parse_event_time(time_str)
+            continue
+
+        if stripped.startswith("Seconds since last reboot:"):
+            # No absolute time - use relative marker
+            if "event_time" not in current:
+                current["event_time"] = None
+            continue
+
+        if stripped.startswith("Code:"):
+            current["event_code"] = stripped.split(":", 1)[1].strip()
+            continue
+
+        if stripped.startswith("Class:"):
+            class_val = stripped.split(":", 1)[1].strip()
+            current["event_class"] = class_val
+            current["severity"] = _map_event_severity(class_val)
+            continue
+
+        if stripped.startswith("Locale:"):
+            continue
+
+        if stripped.startswith("Event Description:"):
+            current["event_description"] = stripped.split(":", 1)[1].strip()
+            continue
+
+        if stripped == "Event Data:":
+            in_event_data = True
+            continue
+
+        if stripped.startswith("====="):
+            continue
+
+        if in_event_data and stripped:
+            # Stop collecting event data if we hit storcli CLI footer
+            if stripped.startswith("CLI Version") or stripped.startswith("Controller Properties"):
+                in_event_data = False
+                continue
+            event_data_lines.append(stripped)
+
+    # Save last event
+    if current:
+        _finalize_text_event(current, event_data_lines, events)
+
+    logger.debug("Parsed %d text events", len(events))
+    return events
+
+
+def _finalize_text_event(
+    current: Dict[str, Any],
+    event_data_lines: List[str],
+    events: List[Dict[str, Any]],
+) -> None:
+    """Finalize a text-parsed event and add to events list."""
+    data_text = "\n".join(event_data_lines).strip()
+    if data_text.lower() == "none" or not data_text:
+        data_text = None
+
+    event = {
+        "event_id": current.get("event_id", 0),
+        "event_time": current.get("event_time"),
+        "severity": current.get("severity", "info"),
+        "event_class": current.get("event_class", "0"),
+        "event_description": current.get("event_description", ""),
+        "event_data": {"text": data_text} if data_text else None,
+    }
+    events.append(event)
+
+
+def _parse_event_time(time_str: str) -> Optional[str]:
+    """Parse storcli event timestamp string to ISO format.
+
+    Input: 'Tue Feb 24 00:05:05 2026'
+    Output: '2026-02-24T00:05:05'
+    """
+    from datetime import datetime as _dt
+
+    formats = [
+        "%a %b %d %H:%M:%S %Y",   # Tue Feb 24 00:05:05 2026
+        "%m/%d/%Y, %H:%M:%S",     # 02/24/2026, 00:05:05
+    ]
+    for fmt in formats:
+        try:
+            dt = _dt.strptime(time_str.strip(), fmt)
+            return dt.isoformat()
+        except ValueError:
+            continue
+    return time_str
 
 
 def parse_bbu(response: Dict[str, Any], source: str = "bbu") -> Dict[str, Any]:

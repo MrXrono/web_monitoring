@@ -384,12 +384,12 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="d-flex justify-content-between align-items-center mb-1">
             <small class="text-muted fw-semibold">{{ _('Temperature') }}</small>
             <span class="badge {% if ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 60 %}bg-warning text-dark{% else %}bg-success{% endif %}">
-              {{ ctrl.temperature | default(0) }} C
+              {{ ctrl.temperature if ctrl.temperature is not none else 0 }} C
             </span>
           </div>
           <div class="progress" style="height: 8px;">
             <div class="progress-bar {% if ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 60 %}bg-warning{% else %}bg-success{% endif %}"
-                 style="width: {{ [ctrl.temperature | default(0), 100] | min }}%"></div>
+                 style="width: {{ [ctrl.temperature if ctrl.temperature is not none else 0, 100] | min }}%"></div>
           </div>
         </div>
         <!-- Memory -->

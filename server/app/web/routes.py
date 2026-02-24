@@ -210,6 +210,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "Previous": "Предыдущая",
         "Next": "Следующая",
         "Page": "Страница",
+        "Total": "Всего",
+        "Progress": "Прогресс",
+        "All Severities": "Все уровни",
+        "Error loading events": "Ошибка загрузки событий",
         "of": "из",
         "items": "записей",
         "problem": "проблема",
@@ -1529,14 +1533,151 @@ async def server_events_partial(
     current_user: dict = Depends(_require_auth),
 ):
     """Return events HTML partial for HTMX tab loading."""
+    from app.models.controller import Controller
+    from app.models.event import ControllerEvent
+    from sqlalchemy import func, desc
+
     lang = _get_lang(request)
     _ = _make_gettext(lang)
+    per_page = 50
 
-    html = (
-        f'<div class="text-center py-5 text-muted">'
-        f'<p>{_("No events found for this server.")}</p>'
-        f'</div>'
-    )
+    try:
+        from app.core.database import async_session
+        async with async_session() as db:
+            # Base query: events for all controllers of this server
+            base_q = (
+                select(ControllerEvent)
+                .join(Controller, ControllerEvent.controller_id == Controller.id)
+                .where(Controller.server_id == server_id)
+            )
+            count_q = (
+                select(func.count(ControllerEvent.id))
+                .join(Controller, ControllerEvent.controller_id == Controller.id)
+                .where(Controller.server_id == server_id)
+            )
+
+            if severity and severity.lower() != "all":
+                base_q = base_q.where(ControllerEvent.severity == severity.lower())
+                count_q = count_q.where(ControllerEvent.severity == severity.lower())
+
+            total = (await db.execute(count_q)).scalar() or 0
+            total_pages = max(1, (total + per_page - 1) // per_page)
+            if page > total_pages:
+                page = total_pages
+
+            result = await db.execute(
+                base_q
+                .order_by(desc(ControllerEvent.event_time), desc(ControllerEvent.id))
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+            )
+            events = result.scalars().all()
+    except Exception as exc:
+        logger.error("Failed to load events for server %s: %s", server_id, exc)
+        return HTMLResponse(
+            content=f'<div class="alert alert-danger">{_("Error loading events")}: {exc}</div>'
+        )
+
+    if not events and total == 0:
+        return HTMLResponse(
+            content=f'<div class="text-center py-5 text-muted">'
+            f'<p>{_("No events found for this server.")}</p></div>'
+        )
+
+    # Severity filter buttons
+    sev_options = [
+        ("all", _("All"), "btn-outline-secondary"),
+        ("info", _("Info"), "btn-outline-info"),
+        ("warning", _("Warning"), "btn-outline-warning"),
+        ("critical", _("Critical"), "btn-outline-danger"),
+        ("progress", _("Progress"), "btn-outline-primary"),
+    ]
+    active_sev = (severity or "all").lower()
+    filter_html = '<div class="mb-3 d-flex gap-1 flex-wrap">'
+    for sev_val, sev_label, sev_cls in sev_options:
+        is_active = "active" if sev_val == active_sev else ""
+        filter_html += (
+            f'<button class="btn btn-sm {sev_cls} {is_active}" '
+            f'hx-get="/servers/{server_id}/events?severity={sev_val}&page=1" '
+            f'hx-target="#events-pane" hx-swap="innerHTML">'
+            f'{sev_label}</button>'
+        )
+    filter_html += '</div>'
+
+    # Table rows
+    rows = []
+    for evt in events:
+        sev = (evt.severity or "info").lower()
+        sev_badge = {
+            "critical": "bg-danger",
+            "fatal": "bg-danger",
+            "warning": "bg-warning text-dark",
+            "info": "bg-info text-dark",
+            "progress": "bg-primary",
+        }.get(sev, "bg-secondary")
+
+        time_str = ""
+        if evt.event_time:
+            time_str = evt.event_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        desc = evt.event_description or ""
+
+        rows.append(
+            f'<tr>'
+            f'<td class="text-nowrap small">{time_str}</td>'
+            f'<td><span class="badge {sev_badge}">{sev}</span></td>'
+            f'<td class="small">{evt.event_class or ""}</td>'
+            f'<td class="small">{desc}</td>'
+            f'</tr>'
+        )
+
+    table_html = f'''
+    <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0">
+    <thead class="table-light">
+    <tr>
+      <th>{_("Time")}</th>
+      <th>{_("Severity")}</th>
+      <th>{_("Class")}</th>
+      <th>{_("Description")}</th>
+    </tr>
+    </thead>
+    <tbody>{"".join(rows)}</tbody>
+    </table>
+    </div>'''
+
+    # Pagination
+    pag_html = ""
+    if total_pages > 1:
+        pag_html = '<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">'
+        sev_param = f"&severity={active_sev}" if active_sev != "all" else ""
+        if page > 1:
+            pag_html += (
+                f'<li class="page-item"><a class="page-link" '
+                f'hx-get="/servers/{server_id}/events?page={page - 1}{sev_param}" '
+                f'hx-target="#events-pane" hx-swap="innerHTML">&laquo;</a></li>'
+            )
+        # Show page range
+        start_p = max(1, page - 3)
+        end_p = min(total_pages, page + 3)
+        for p in range(start_p, end_p + 1):
+            active_cls = "active" if p == page else ""
+            pag_html += (
+                f'<li class="page-item {active_cls}"><a class="page-link" '
+                f'hx-get="/servers/{server_id}/events?page={p}{sev_param}" '
+                f'hx-target="#events-pane" hx-swap="innerHTML">{p}</a></li>'
+            )
+        if page < total_pages:
+            pag_html += (
+                f'<li class="page-item"><a class="page-link" '
+                f'hx-get="/servers/{server_id}/events?page={page + 1}{sev_param}" '
+                f'hx-target="#events-pane" hx-swap="innerHTML">&raquo;</a></li>'
+            )
+        pag_html += '</ul></nav>'
+
+    info_html = f'<div class="text-muted small mb-2">{_("Total")}: {total} | {_("Page")} {page}/{total_pages}</div>'
+
+    html = f'<div class="p-3">{filter_html}{info_html}{table_html}{pag_html}</div>'
     return HTMLResponse(content=html)
 
 
