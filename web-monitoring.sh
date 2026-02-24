@@ -11,6 +11,7 @@ PROJECT_NAME="raid-monitor"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 ENV_FILE="${SCRIPT_DIR}/.env"
 BACKUP_DIR="${SCRIPT_DIR}/backups"
+PROXY_FILE="${SCRIPT_DIR}/.proxy"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,6 +23,52 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
+
+load_proxy() {
+    if [ -n "${BUILD_PROXY:-}" ]; then
+        export BUILD_PROXY
+        return
+    fi
+    if [ -f "$PROXY_FILE" ]; then
+        BUILD_PROXY="$(cat "$PROXY_FILE" | tr -d '[:space:]')"
+        if [ -n "$BUILD_PROXY" ]; then
+            export BUILD_PROXY
+            log_info "Build proxy: $BUILD_PROXY"
+        fi
+    fi
+}
+
+do_proxy() {
+    local action="${1:-}"
+    case "$action" in
+        set)
+            local url="${2:-}"
+            if [ -z "$url" ]; then
+                log_error "Usage: $0 proxy set <proxy_url>"
+                log_info "Example: $0 proxy set socks5://rkn.vniizht.lan:10808"
+                exit 1
+            fi
+            echo "$url" > "$PROXY_FILE"
+            chmod 600 "$PROXY_FILE"
+            log_info "Build proxy set: $url"
+            ;;
+        remove)
+            rm -f "$PROXY_FILE"
+            unset BUILD_PROXY 2>/dev/null || true
+            log_info "Build proxy removed"
+            ;;
+        show)
+            if [ -f "$PROXY_FILE" ]; then
+                log_info "Build proxy: $(cat "$PROXY_FILE")"
+            else
+                log_info "Build proxy: not configured"
+            fi
+            ;;
+        *)
+            echo "Usage: $0 proxy {set <url>|remove|show}"
+            ;;
+    esac
+}
 
 check_requirements() {
     local missing=0
@@ -128,6 +175,7 @@ do_install() {
     check_requirements
     generate_env
     generate_ssl
+    load_proxy
 
     log_step "Building Docker images..."
     compose_cmd build --no-cache
@@ -154,6 +202,7 @@ do_install() {
 do_update() {
     log_info "Updating RAID Monitor..."
     check_requirements
+    load_proxy
 
     if [ -d "${SCRIPT_DIR}/.git" ]; then
         log_step "Pulling latest changes..."
@@ -173,6 +222,7 @@ do_update() {
 do_reinstall() {
     log_info "Reinstalling RAID Monitor (keeping database)..."
     check_requirements
+    load_proxy
 
     log_step "Stopping services..."
     compose_cmd down
@@ -298,17 +348,22 @@ usage() {
     echo "Usage: $0 <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  install      Install RAID Monitor (build, generate configs, start)"
-    echo "  update       Update RAID Monitor (pull, rebuild, restart)"
-    echo "  reinstall    Reinstall (stop, rebuild, start - keeps database)"
-    echo "  purge        Full reinstall with database deletion"
-    echo "  status       Show service status"
-    echo "  logs [svc]   Show logs (optional: nginx, web, postgres)"
-    echo "  backup       Backup database"
-    echo "  restore <f>  Restore database from backup file"
+    echo "  install       Install RAID Monitor (build, generate configs, start)"
+    echo "  update        Update RAID Monitor (pull, rebuild, restart)"
+    echo "  reinstall     Reinstall (stop, rebuild, start - keeps database)"
+    echo "  purge         Full reinstall with database deletion"
+    echo "  status        Show service status"
+    echo "  logs [svc]    Show logs (optional: nginx, web, postgres)"
+    echo "  backup        Backup database"
+    echo "  restore <f>   Restore database from backup file"
+    echo "  proxy set <u> Set build proxy (socks5/http)"
+    echo "  proxy remove  Remove build proxy"
+    echo "  proxy show    Show current build proxy"
     echo ""
     echo "Examples:"
     echo "  $0 install"
+    echo "  $0 proxy set socks5://rkn.vniizht.lan:10808"
+    echo "  $0 update"
     echo "  $0 logs web"
     echo "  $0 backup"
     echo "  $0 restore backups/raidmonitor_20260224.sql.gz"
@@ -325,5 +380,6 @@ case "${1:-}" in
     logs)       do_logs "$2" "$3" ;;
     backup)     do_backup ;;
     restore)    do_restore "$2" ;;
+    proxy)      do_proxy "$2" "$3" ;;
     *)          usage ;;
 esac
