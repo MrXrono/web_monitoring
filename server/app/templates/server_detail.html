@@ -179,7 +179,7 @@
         <div class="col-6 col-lg-3">
           <div class="card border-0 shadow-sm text-center p-3">
             <div class="fs-3 fw-bold
-              {% if server.active_alerts is defined and server.active_alerts > 0 %}text-danger{% else %}text-success{% endif %}">
+              {% if server.active_alerts is defined and server.active_alerts is not none and server.active_alerts > 0 %}text-danger{% else %}text-success{% endif %}">
               {{ server.active_alerts | default(0) }}
             </div>
             <small class="text-muted">{{ _('Active Alerts') }}</small>
@@ -383,12 +383,12 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="mb-3">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <small class="text-muted fw-semibold">{{ _('Temperature') }}</small>
-            <span class="badge {% if ctrl.temperature is defined and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature > 60 %}bg-warning text-dark{% else %}bg-success{% endif %}">
+            <span class="badge {% if ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 60 %}bg-warning text-dark{% else %}bg-success{% endif %}">
               {{ ctrl.temperature | default(0) }} C
             </span>
           </div>
           <div class="progress" style="height: 8px;">
-            <div class="progress-bar {% if ctrl.temperature is defined and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature > 60 %}bg-warning{% else %}bg-success{% endif %}"
+            <div class="progress-bar {% if ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature is not none and ctrl.temperature > 60 %}bg-warning{% else %}bg-success{% endif %}"
                  style="width: {{ [ctrl.temperature | default(0), 100] | min }}%"></div>
           </div>
         </div>
@@ -396,7 +396,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <table class="table table-sm table-borderless mb-0">
           <tr><td class="text-muted">{{ _('Memory') }}:</td><td class="fw-semibold">{{ ctrl.memory_size | default('N/A') }}</td></tr>
           <tr><td class="text-muted">{{ _('Correctable Errors') }}:</td><td class="fw-semibold">{{ ctrl.memory_correctable_errors | default(0) }}</td></tr>
-          <tr><td class="text-muted">{{ _('Uncorrectable Errors') }}:</td><td class="fw-semibold {% if ctrl.memory_uncorrectable_errors is defined and ctrl.memory_uncorrectable_errors > 0 %}text-danger{% endif %}">{{ ctrl.memory_uncorrectable_errors | default(0) }}</td></tr>
+          <tr><td class="text-muted">{{ _('Uncorrectable Errors') }}:</td><td class="fw-semibold {% if ctrl.memory_uncorrectable_errors is defined and ctrl.memory_uncorrectable_errors is not none and ctrl.memory_uncorrectable_errors > 0 %}text-danger{% endif %}">{{ ctrl.memory_uncorrectable_errors | default(0) }}</td></tr>
         </table>
       </div>
     </div>
@@ -546,13 +546,13 @@ document.addEventListener('DOMContentLoaded', function() {
             <td>{{ pd.media_type | default('N/A') }}</td>
             <td>{{ pd.interface | default('N/A') }}</td>
             <td>
-              <span class="{% if pd.temperature is defined and pd.temperature > 50 %}text-danger fw-bold{% elif pd.temperature is defined and pd.temperature > 40 %}text-warning{% endif %}">
-                {{ pd.temperature | default('N/A') }}{% if pd.temperature is defined %} C{% endif %}
+              <span class="{% if pd.temperature is defined and pd.temperature is not none and pd.temperature > 50 %}text-danger fw-bold{% elif pd.temperature is defined and pd.temperature is not none and pd.temperature > 40 %}text-warning{% endif %}">
+                {{ pd.temperature | default('N/A') }}{% if pd.temperature is defined and pd.temperature is not none %} C{% endif %}
               </span>
             </td>
-            <td class="{% if pd.media_errors is defined and pd.media_errors > 0 %}text-danger fw-bold{% endif %}">{{ pd.media_errors | default(0) }}</td>
-            <td class="{% if pd.other_errors is defined and pd.other_errors > 0 %}text-warning fw-bold{% endif %}">{{ pd.other_errors | default(0) }}</td>
-            <td class="{% if pd.predictive_failure is defined and pd.predictive_failure > 0 %}text-danger fw-bold{% endif %}">{{ pd.predictive_failure | default(0) }}</td>
+            <td class="{% if pd.media_errors is defined and pd.media_errors is not none and pd.media_errors > 0 %}text-danger fw-bold{% endif %}">{{ pd.media_errors | default(0) }}</td>
+            <td class="{% if pd.other_errors is defined and pd.other_errors is not none and pd.other_errors > 0 %}text-warning fw-bold{% endif %}">{{ pd.other_errors | default(0) }}</td>
+            <td class="{% if pd.predictive_failure is defined and pd.predictive_failure is not none and pd.predictive_failure > 0 %}text-danger fw-bold{% endif %}">{{ pd.predictive_failure | default(0) }}</td>
             <td>
               {% if pd.smart_alert %}
               <span class="text-danger" title="{{ _('SMART Alert') }}">
