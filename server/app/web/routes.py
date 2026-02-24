@@ -9,7 +9,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Request, Depends, Query, Cookie, HTTPException
+from fastapi import APIRouter, Request, Depends, Query, Cookie, HTTPException, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -229,24 +229,35 @@ def _make_gettext(lang: str):
 
 async def _get_current_user(request: Request) -> Optional[dict]:
     """
-    Stub auth dependency. In production, this would check session/JWT.
-    Returns a user dict or None.
+    Check access_token JWT cookie and return user dict or None.
     """
-    user = getattr(request.state, "user", None)
-    if user:
-        return user
-    # Fallback: check for session cookie (stub)
-    session_token = request.cookies.get("session")
-    if session_token:
-        return {"username": "admin", "id": 1, "is_admin": True}
-    return None
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+    try:
+        from jose import jwt
+        from app.config import settings
+        from app.dependencies import JWT_ALGORITHM
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            return None
+        return {
+            "username": username,
+            "id": payload.get("uid"),
+            "is_admin": payload.get("admin", False),
+        }
+    except Exception:
+        return None
 
 
 async def _require_auth(request: Request) -> dict:
     """Dependency that redirects to login if not authenticated."""
     user = await _get_current_user(request)
     if not user:
-        raise HTTPException(status_code=302, headers={"Location": "/login"})
+        from fastapi.responses import RedirectResponse
+        raise HTTPException(status_code=303, detail="Not authenticated",
+                            headers={"Location": "/login"})
     return user
 
 
@@ -304,6 +315,97 @@ async def login_page(
     response = templates.TemplateResponse("login.html", ctx)
     if lang and lang in ("ru", "en"):
         response.set_cookie("lang", lang, max_age=31536000)
+    return response
+
+
+@router.post("/login", response_class=HTMLResponse, include_in_schema=False)
+async def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+):
+    """Handle login form submission."""
+    import bcrypt as _bcrypt
+    from jose import jwt
+    from datetime import timedelta, timezone
+    from app.config import settings
+    from app.database import async_session
+    from app.models.user import User
+    from app.models.setting import Setting
+    from app.dependencies import JWT_ALGORITHM
+    from sqlalchemy import select
+
+    lang = _get_lang(request)
+    _ = _make_gettext(lang)
+
+    async with async_session() as db:
+        result = await db.execute(select(User).where(User.username == username))
+        user = result.scalar_one_or_none()
+
+        authenticated = False
+
+        # Local auth
+        if user and user.auth_source == "local" and user.password_hash:
+            try:
+                if _bcrypt.checkpw(password.encode("utf-8"), user.password_hash.encode("utf-8")):
+                    if not user.is_active:
+                        ctx = _base_context(request, active_page="login", error=_("User account is disabled"))
+                        return templates.TemplateResponse("login.html", ctx)
+                    authenticated = True
+            except Exception:
+                pass
+
+        # LDAP fallback
+        if not authenticated:
+            try:
+                from app.services.ldap_auth import ldap_authenticate
+                ldap_result = await ldap_authenticate(db, username, password)
+                if ldap_result:
+                    if user is None:
+                        user = User(
+                            username=username,
+                            display_name=ldap_result.get("display_name", username),
+                            auth_source="ldap",
+                            is_active=True,
+                            is_admin=ldap_result.get("is_admin", False),
+                            language=lang,
+                        )
+                        db.add(user)
+                        await db.commit()
+                        await db.refresh(user)
+                    authenticated = True
+            except Exception:
+                pass
+
+        if not authenticated:
+            ctx = _base_context(request, active_page="login", error=_("Invalid credentials"))
+            return templates.TemplateResponse("login.html", ctx)
+
+        # Create JWT token
+        expire = datetime.now(timezone.utc) + timedelta(hours=24)
+        token_data = {
+            "sub": user.username,
+            "uid": str(user.id),
+            "admin": user.is_admin,
+            "exp": expire,
+        }
+        token = jwt.encode(token_data, settings.SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+        # Redirect to dashboard with token in cookie
+        response = RedirectResponse(url="/dashboard", status_code=302)
+        response.set_cookie(
+            "access_token", token,
+            max_age=86400, httponly=True, samesite="lax", secure=True,
+        )
+        response.set_cookie("lang", user.language or lang, max_age=31536000)
+        return response
+
+
+@router.get("/logout", include_in_schema=False)
+async def logout(request: Request):
+    """Clear auth cookie and redirect to login."""
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie("access_token")
     return response
 
 

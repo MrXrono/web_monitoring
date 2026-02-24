@@ -1051,3 +1051,22 @@ async def evaluate_alerts(db: AsyncSession, server: Server) -> list[AlertHistory
         )
 
     return new_alerts
+
+
+async def check_stale_agents(db: AsyncSession) -> None:
+    """
+    Check all servers for stale (offline) agents and evaluate
+    agent-related alert rules against them.
+    """
+    from app.models import Server
+
+    result = await db.execute(select(Server))
+    servers = result.scalars().all()
+
+    for server in servers:
+        try:
+            await evaluate_alerts(db, server)
+        except Exception:
+            logger.exception("Error checking stale agent for %s", server.hostname)
+
+    await db.commit()
