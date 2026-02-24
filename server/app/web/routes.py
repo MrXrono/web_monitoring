@@ -9,9 +9,14 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Request, Depends, Query, Cookie, HTTPException, Form
+import logging
+
+from fastapi import APIRouter, Request, Depends, Query, Cookie, HTTPException, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Router & Templates setup
@@ -208,6 +213,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "of": "из",
         "items": "записей",
         "problem": "проблема",
+        "Settings saved successfully.": "Настройки успешно сохранены.",
     },
     "en": {},
 }
@@ -543,6 +549,67 @@ async def settings_redirect(request: Request):
     return RedirectResponse(url="/settings/general", status_code=302)
 
 
+async def _load_settings_dict(db) -> dict:
+    """Load all settings from the DB into a dict, decrypting where needed."""
+    from app.models.setting import Setting
+    result = await db.execute(select(Setting))
+    rows = result.scalars().all()
+
+    defaults = {
+        "default_language": "en",
+        "data_retention_days": "90",
+        "agent_auto_approve": "false",
+        "ldap_enabled": "false",
+        "ldap_server_url": "",
+        "ldap_bind_dn": "",
+        "ldap_bind_password": "",
+        "ldap_search_base": "",
+        "ldap_user_filter": "(uid={username})",
+        "ldap_group_filter": "",
+        "ldap_admin_group": "",
+        "telegram_enabled": "false",
+        "telegram_bot_token": "",
+        "telegram_chat_id": "",
+        "web_debug_enabled": "false",
+    }
+
+    for row in rows:
+        val = row.value or ""
+        if row.is_encrypted and val:
+            try:
+                from app.services.encryption import decrypt_value
+                val = decrypt_value(val)
+            except Exception:
+                val = ""
+        defaults[row.key] = val
+
+    # Convert special types
+    out = dict(defaults)
+    out["data_retention_days"] = int(out.get("data_retention_days", "90") or "90")
+    out["agent_auto_approve"] = out.get("agent_auto_approve", "false").lower() in ("true", "1", "on")
+    out["ldap_enabled"] = out.get("ldap_enabled", "false").lower() in ("true", "1", "on")
+    out["telegram_enabled"] = out.get("telegram_enabled", "false").lower() in ("true", "1", "on")
+    out["web_debug_enabled"] = out.get("web_debug_enabled", "false").lower() in ("true", "1", "on")
+    return out
+
+
+async def _save_setting(db, key: str, value: str, *, encrypted: bool = False, category: str = "general"):
+    """Upsert a single setting row."""
+    from app.models.setting import Setting
+    if encrypted and value:
+        from app.services.encryption import encrypt_value
+        value = encrypt_value(value)
+
+    result = await db.execute(select(Setting).where(Setting.key == key))
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.value = value
+        existing.is_encrypted = encrypted
+        existing.category = category
+    else:
+        db.add(Setting(key=key, value=value, is_encrypted=encrypted, category=category))
+
+
 @router.get(
     "/settings/{section}",
     response_class=HTMLResponse,
@@ -552,6 +619,7 @@ async def settings_page(
     request: Request,
     section: str,
     lang: Optional[str] = None,
+    saved: Optional[str] = None,
     current_user: dict = Depends(_require_auth),
 ):
     """Render settings page for the given section."""
@@ -559,39 +627,25 @@ async def settings_page(
     if section not in valid_sections:
         return RedirectResponse(url="/settings/general", status_code=302)
 
-    # Stub settings data
-    settings = {
-        "default_language": _get_lang(request),
-        "data_retention_days": 90,
-        "agent_auto_approve": False,
-        "ldap_enabled": False,
-        "ldap_server_url": "",
-        "ldap_bind_dn": "",
-        "ldap_bind_password": "",
-        "ldap_search_base": "",
-        "ldap_user_filter": "(uid={username})",
-        "ldap_group_filter": "",
-        "ldap_admin_group": "",
-        "telegram_enabled": False,
-        "telegram_bot_token": "",
-        "telegram_chat_id": "",
-        "web_debug_enabled": False,
-    }
+    # Load settings from database
+    from app.database import async_session
+    async with async_session() as db:
+        settings_data = await _load_settings_dict(db)
 
     extra = {
-        "settings": settings,
+        "settings": settings_data,
         "settings_section": section,
     }
 
+    if saved == "1":
+        lang_code = _get_lang(request)
+        _ = _make_gettext(lang_code)
+        extra["messages"] = [{"category": "success", "text": _("Settings saved successfully.")}]
+
     # Section-specific context
     if section == "ssl":
-        extra["ssl_info"] = {
-            "subject": "CN=raid-monitor.local",
-            "issuer": "CN=raid-monitor.local",
-            "valid_from": "2025-01-01",
-            "valid_to": "2026-01-01",
-            "days_until_expiry": 310,
-        }
+        ssl_info = _get_ssl_info()
+        extra["ssl_info"] = ssl_info
 
     if section == "agents":
         extra["agent_current_version"] = "1.0.0"
@@ -613,6 +667,222 @@ async def settings_page(
     if lang and lang in ("ru", "en"):
         response.set_cookie("lang", lang, max_age=31536000)
     return response
+
+
+def _get_ssl_info() -> dict:
+    """Read SSL certificate info from nginx_ssl volume."""
+    import ssl as _ssl
+    from datetime import timezone
+
+    cert_path = "/app/nginx_ssl/server.crt"
+    if not os.path.exists(cert_path):
+        cert_path = "/app/nginx_ssl/cert.pem"
+    if not os.path.exists(cert_path):
+        return {}
+
+    try:
+        import OpenSSL.crypto
+        with open(cert_path, "rb") as f:
+            cert_data = f.read()
+        cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert_data)
+        subject = cert.get_subject()
+        issuer = cert.get_issuer()
+        not_after = datetime.strptime(cert.get_notAfter().decode("ascii"), "%Y%m%d%H%M%SZ")
+        not_before = datetime.strptime(cert.get_notBefore().decode("ascii"), "%Y%m%d%H%M%SZ")
+        days_left = (not_after - datetime.utcnow()).days
+        return {
+            "subject": f"CN={subject.CN}" if subject.CN else str(subject),
+            "issuer": f"CN={issuer.CN}" if issuer.CN else str(issuer),
+            "valid_from": not_before.strftime("%Y-%m-%d"),
+            "valid_to": not_after.strftime("%Y-%m-%d"),
+            "days_until_expiry": days_left,
+        }
+    except Exception:
+        # Fallback if pyOpenSSL not available — try subprocess
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["openssl", "x509", "-in", cert_path, "-noout", "-dates", "-subject", "-issuer"],
+                capture_output=True, text=True, timeout=5,
+            )
+            info = {}
+            for line in result.stdout.strip().splitlines():
+                if line.startswith("subject="):
+                    info["subject"] = line.split("=", 1)[1].strip()
+                elif line.startswith("issuer="):
+                    info["issuer"] = line.split("=", 1)[1].strip()
+                elif line.startswith("notBefore="):
+                    info["valid_from"] = line.split("=", 1)[1].strip()
+                elif line.startswith("notAfter="):
+                    info["valid_to"] = line.split("=", 1)[1].strip()
+            return info
+        except Exception:
+            return {}
+
+
+# ---------------------------------------------------------------------------
+# Settings POST handlers
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/settings/general",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def settings_general_save(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+    default_language: str = Form("en"),
+    data_retention_days: int = Form(90),
+    agent_auto_approve: Optional[str] = Form(None),
+):
+    """Save general settings."""
+    from app.database import async_session
+
+    async with async_session() as db:
+        await _save_setting(db, "default_language", default_language, category="general")
+        await _save_setting(db, "data_retention_days", str(data_retention_days), category="general")
+        await _save_setting(db, "agent_auto_approve", "true" if agent_auto_approve else "false", category="general")
+        await db.commit()
+
+    return RedirectResponse(url="/settings/general?saved=1", status_code=303)
+
+
+@router.post(
+    "/settings/ldap",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def settings_ldap_save(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+    ldap_enabled: Optional[str] = Form(None),
+    ldap_server_url: str = Form(""),
+    ldap_bind_dn: str = Form(""),
+    ldap_bind_password: str = Form(""),
+    ldap_search_base: str = Form(""),
+    ldap_user_filter: str = Form("(uid={username})"),
+    ldap_group_filter: str = Form(""),
+    ldap_admin_group: str = Form(""),
+):
+    """Save LDAP settings."""
+    from app.database import async_session
+
+    async with async_session() as db:
+        await _save_setting(db, "ldap_enabled", "true" if ldap_enabled else "false", category="ldap")
+        await _save_setting(db, "ldap_server_url", ldap_server_url, category="ldap")
+        await _save_setting(db, "ldap_bind_dn", ldap_bind_dn, category="ldap")
+        if ldap_bind_password:
+            await _save_setting(db, "ldap_bind_password", ldap_bind_password, encrypted=True, category="ldap")
+        await _save_setting(db, "ldap_search_base", ldap_search_base, category="ldap")
+        await _save_setting(db, "ldap_user_filter", ldap_user_filter, category="ldap")
+        await _save_setting(db, "ldap_group_filter", ldap_group_filter, category="ldap")
+        await _save_setting(db, "ldap_admin_group", ldap_admin_group, category="ldap")
+        await db.commit()
+
+    return RedirectResponse(url="/settings/ldap?saved=1", status_code=303)
+
+
+@router.post(
+    "/settings/telegram",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def settings_telegram_save(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+    telegram_enabled: Optional[str] = Form(None),
+    telegram_bot_token: str = Form(""),
+    telegram_chat_id: str = Form(""),
+):
+    """Save Telegram notification settings."""
+    from app.database import async_session
+
+    async with async_session() as db:
+        await _save_setting(db, "telegram_enabled", "true" if telegram_enabled else "false", category="telegram")
+        if telegram_bot_token:
+            await _save_setting(db, "telegram_bot_token", telegram_bot_token, encrypted=True, category="telegram")
+        await _save_setting(db, "telegram_chat_id", telegram_chat_id, category="telegram")
+        await db.commit()
+
+    return RedirectResponse(url="/settings/telegram?saved=1", status_code=303)
+
+
+@router.post(
+    "/settings/ssl",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def settings_ssl_upload(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+    ssl_cert_file: UploadFile = File(None),
+    ssl_key_file: UploadFile = File(None),
+):
+    """Upload SSL certificate and key files."""
+    import shutil
+
+    ssl_dir = "/app/nginx_ssl"
+    os.makedirs(ssl_dir, exist_ok=True)
+
+    lang = _get_lang(request)
+    _ = _make_gettext(lang)
+
+    if ssl_cert_file and ssl_cert_file.filename:
+        cert_data = await ssl_cert_file.read()
+        with open(os.path.join(ssl_dir, "server.crt"), "wb") as f:
+            f.write(cert_data)
+
+    if ssl_key_file and ssl_key_file.filename:
+        key_data = await ssl_key_file.read()
+        with open(os.path.join(ssl_dir, "server.key"), "wb") as f:
+            f.write(key_data)
+
+    return RedirectResponse(url="/settings/ssl?saved=1", status_code=303)
+
+
+@router.post(
+    "/settings/agents/upload",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def settings_agents_upload(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+    agent_rpm: UploadFile = File(None),
+):
+    """Upload agent RPM package."""
+    if agent_rpm and agent_rpm.filename:
+        upload_dir = "/app/agent_packages"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, agent_rpm.filename)
+        data = await agent_rpm.read()
+        with open(file_path, "wb") as f:
+            f.write(data)
+
+    return RedirectResponse(url="/settings/agents?saved=1", status_code=303)
+
+
+@router.post(
+    "/settings/agents/storcli-upload",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def settings_storcli_upload(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+    storcli_rpm: UploadFile = File(None),
+):
+    """Upload storcli64 RPM package."""
+    if storcli_rpm and storcli_rpm.filename:
+        upload_dir = "/app/storcli_packages"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, storcli_rpm.filename)
+        data = await storcli_rpm.read()
+        with open(file_path, "wb") as f:
+            f.write(data)
+
+    return RedirectResponse(url="/settings/agents?saved=1", status_code=303)
 
 
 # ---------------------------------------------------------------------------
