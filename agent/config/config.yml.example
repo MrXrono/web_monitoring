@@ -1,0 +1,26 @@
+# RAID Monitor Agent Configuration
+# Server URL (required)
+server_url: "https://raid-monitor.example.com"
+
+# API Key (auto-populated after registration)
+api_key: ""
+
+# Path to storcli64 binary (auto-detected if empty)
+storcli_path: "/opt/MegaRAID/storcli/storcli64"
+
+# Collection interval in seconds (default: 600 = 10 minutes)
+collection_interval: 600
+
+# SSL certificate verification
+ssl_verify: true
+
+# Custom CA bundle path (optional, empty = system default)
+ca_bundle: ""
+
+# Debug logging
+debug: false
+
+# Log settings
+log_file: "/var/log/raid-agent/agent.log"
+log_max_size: 10485760
+log_backup_count: 5

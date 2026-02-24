@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Settings') }} - SSL - RAID Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0 fw-bold">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-gear me-2" viewBox="0 0 16 16">
+      <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+      <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/>
+    </svg>
+    {{ _('Settings') }}
+  </h4>
+</div>
+
+<div class="row">
+  <!-- Settings Sidebar -->
+  <div class="col-lg-3 mb-3">
+    <div class="card border-0 shadow-sm">
+      <div class="list-group list-group-flush rounded">
+        <a href="/settings/general" class="list-group-item list-group-item-action"><i class="bi bi-sliders me-2"></i>{{ _('General') }}</a>
+        <a href="/settings/ldap" class="list-group-item list-group-item-action"><i class="bi bi-people me-2"></i>LDAP</a>
+        <a href="/settings/telegram" class="list-group-item list-group-item-action"><i class="bi bi-send me-2"></i>Telegram</a>
+        <a href="/settings/ssl" class="list-group-item list-group-item-action active"><i class="bi bi-shield-lock me-2"></i>SSL</a>
+        <a href="/settings/agents" class="list-group-item list-group-item-action"><i class="bi bi-box-seam me-2"></i>{{ _('Agents') }}</a>
+        <a href="/settings/debug" class="list-group-item list-group-item-action"><i class="bi bi-bug me-2"></i>{{ _('Debug') }}</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- SSL Settings Content -->
+  <div class="col-lg-9">
+    <!-- Current Certificate Info -->
+    {% if ssl_info is defined and ssl_info %}
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white">
+        <h5 class="card-title mb-0">{{ _('Current Certificate') }}</h5>
+      </div>
+      <div class="card-body">
+        {% if ssl_info.days_until_expiry is defined and ssl_info.days_until_expiry <= 30 %}
+        <div class="alert alert-warning d-flex align-items-center" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-exclamation-triangle-fill me-2 flex-shrink-0" viewBox="0 0 16 16">
+            <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+          </svg>
+          <div>
+            {{ _('Certificate expires in') }} <strong>{{ ssl_info.days_until_expiry }}</strong> {{ _('days') }}!
+            {{ _('Please renew it soon.') }}
+          </div>
+        </div>
+        {% endif %}
+        <div class="table-responsive">
+          <table class="table table-sm table-borderless mb-0">
+            <tr>
+              <td class="text-muted" style="width: 200px;">{{ _('Subject') }}:</td>
+              <td class="fw-semibold">{{ ssl_info.subject | default('N/A') }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">{{ _('Issuer') }}:</td>
+              <td class="fw-semibold">{{ ssl_info.issuer | default('N/A') }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">{{ _('Valid From') }}:</td>
+              <td class="fw-semibold">{{ ssl_info.valid_from | default('N/A') }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">{{ _('Valid To') }}:</td>
+              <td>
+                <span class="fw-semibold {% if ssl_info.days_until_expiry is defined and ssl_info.days_until_expiry <= 30 %}text-danger{% endif %}">
+                  {{ ssl_info.valid_to | default('N/A') }}
+                </span>
+                {% if ssl_info.days_until_expiry is defined %}
+                <span class="badge {% if ssl_info.days_until_expiry <= 30 %}bg-danger{% elif ssl_info.days_until_expiry <= 90 %}bg-warning text-dark{% else %}bg-success{% endif %} ms-2">
+                  {{ ssl_info.days_until_expiry }} {{ _('days left') }}
+                </span>
+                {% endif %}
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Upload Certificate -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white">
+        <h5 class="card-title mb-0">{{ _('Upload Certificate') }}</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="/settings/ssl" enctype="multipart/form-data" id="ssl-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token | default('') }}">
+
+          <div class="mb-3">
+            <label for="ssl_cert_file" class="form-label fw-semibold">{{ _('Certificate File') }} (.pem, .crt)</label>
+            <input type="file" class="form-control" id="ssl_cert_file" name="ssl_cert_file"
+                   accept=".pem,.crt,.cer">
+            <div class="form-text">{{ _('PEM-encoded SSL certificate file.') }}</div>
+          </div>
+
+          <div class="mb-4">
+            <label for="ssl_key_file" class="form-label fw-semibold">{{ _('Private Key File') }} (.pem, .key)</label>
+            <input type="file" class="form-control" id="ssl_key_file" name="ssl_key_file"
+                   accept=".pem,.key">
+            <div class="form-text">{{ _('PEM-encoded private key file.') }}</div>
+          </div>
+
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-upload me-1" viewBox="0 0 16 16">
+                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+              </svg>
+              {{ _('Upload') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

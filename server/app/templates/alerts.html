@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Alerts') }} - RAID Monitor{% endblock %}
+
+{% block content %}
+<div x-data="alertsApp()">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0 fw-bold">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-bell me-2" viewBox="0 0 16 16">
+        <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zM8 1.918l-.797.161A4.002 4.002 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4.002 4.002 0 0 0-3.203-3.92L8 1.917zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5.002 5.002 0 0 1 13 6c0 .88.32 4.2 1.22 6z"/>
+      </svg>
+      {{ _('Alerts') }}
+    </h4>
+  </div>
+
+  <!-- Sub-tabs -->
+  <ul class="nav nav-pills mb-4" id="alertsTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="active-alerts-tab" data-bs-toggle="pill"
+              data-bs-target="#active-alerts-pane" type="button" role="tab">
+        {{ _('Active Alerts') }}
+        {% if active_alerts is defined and active_alerts | length > 0 %}
+        <span class="badge bg-danger ms-1">{{ active_alerts | length }}</span>
+        {% endif %}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="alert-history-tab" data-bs-toggle="pill"
+              data-bs-target="#alert-history-pane" type="button" role="tab"
+              hx-get="/alerts/history"
+              hx-target="#alert-history-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Alert History') }}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="alert-rules-tab" data-bs-toggle="pill"
+              data-bs-target="#alert-rules-pane" type="button" role="tab"
+              hx-get="/alerts/rules"
+              hx-target="#alert-rules-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Alert Rules') }}
+      </button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- Active Alerts Tab -->
+    <div class="tab-pane fade show active" id="active-alerts-pane" role="tabpanel">
+      {% if active_alerts is defined and active_alerts | length > 0 %}
+      <div class="list-group">
+        {% for alert in active_alerts %}
+        <div class="list-group-item list-group-item-action border-start border-4
+          {% if alert.severity == 'critical' %}border-danger
+          {% elif alert.severity == 'warning' %}border-warning
+          {% else %}border-info{% endif %}
+          mb-2 rounded shadow-sm">
+          <div class="d-flex w-100 justify-content-between align-items-start">
+            <div class="d-flex align-items-start">
+              <div class="me-3 mt-1">
+                {% if alert.severity == 'critical' %}
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-exclamation-octagon-fill text-danger" viewBox="0 0 16 16">
+                  <path d="M11.46.146A.5.5 0 0 0 11.107 0H4.893a.5.5 0 0 0-.353.146L.146 4.54A.5.5 0 0 0 0 4.893v6.214a.5.5 0 0 0 .146.353l4.394 4.394a.5.5 0 0 0 .353.146h6.214a.5.5 0 0 0 .353-.146l4.394-4.394a.5.5 0 0 0 .146-.353V4.893a.5.5 0 0 0-.146-.353L11.46.146zM8 4c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995A.905.905 0 0 1 8 4zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                </svg>
+                {% elif alert.severity == 'warning' %}
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-exclamation-triangle-fill text-warning" viewBox="0 0 16 16">
+                  <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                </svg>
+                {% else %}
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-info-circle-fill text-info" viewBox="0 0 16 16">
+                  <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.399l-.442-.02.024-.416 2.338-.24zm-.14-2.788a.96.96 0 1 1 0-1.92.96.96 0 0 1 0 1.92z"/>
+                </svg>
+                {% endif %}
+              </div>
+              <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <span class="badge
+                    {% if alert.severity == 'critical' %}bg-danger
+                    {% elif alert.severity == 'warning' %}bg-warning text-dark
+                    {% else %}bg-info text-dark{% endif %}">
+                    {{ alert.severity | upper }}
+                  </span>
+                  <a href="/servers/{{ alert.server_id }}" class="text-decoration-none fw-semibold small">{{ alert.server_name | default('Unknown') }}</a>
+                </div>
+                <h6 class="mb-1">{{ alert.title | default('Alert') }}</h6>
+                <p class="mb-1 small text-muted">{{ alert.message | default('') }}</p>
+                <small class="text-muted">
+                  <span class="relative-time" data-timestamp="{{ alert.created_at | default('') }}">{{ alert.time_display | default('') }}</span>
+                </small>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline-success flex-shrink-0 ms-2"
+                    hx-put="/api/alerts/{{ alert.id }}/resolve"
+                    hx-swap="outerHTML"
+                    hx-target="closest .list-group-item"
+                    hx-confirm="{{ _('Resolve this alert?') }}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-check-lg me-1" viewBox="0 0 16 16">
+                <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022z"/>
+              </svg>
+              {{ _('Resolve') }}
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-5">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="bi bi-check-circle text-success mb-3" viewBox="0 0 16 16">
+            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+            <path d="M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z"/>
+          </svg>
+          <h5 class="text-muted">{{ _('No active alerts') }}</h5>
+          <p class="text-muted mb-0">{{ _('All systems are operating normally.') }}</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Alert History Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="alert-history-pane" role="tabpanel">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alert Rules Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="alert-rules-pane" role="tabpanel">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if alert_history is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('alert-history-pane').innerHTML = document.getElementById('history-content-tpl').innerHTML;
+});
+</script>
+<template id="history-content-tpl">
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white">
+    <div class="row g-2 align-items-end">
+      <div class="col-auto">
+        <label class="form-label small text-muted mb-1">{{ _('Severity') }}</label>
+        <select class="form-select form-select-sm" name="severity"
+                hx-get="/alerts/history"
+                hx-target="#alert-history-pane"
+                hx-swap="innerHTML"
+                hx-include="[name='server'],[name='date_from'],[name='date_to']">
+          <option value="">{{ _('All') }}</option>
+          <option value="critical">{{ _('Critical') }}</option>
+          <option value="warning">{{ _('Warning') }}</option>
+          <option value="info">{{ _('Info') }}</option>
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small text-muted mb-1">{{ _('Server') }}</label>
+        <select class="form-select form-select-sm" name="server"
+                hx-get="/alerts/history"
+                hx-target="#alert-history-pane"
+                hx-swap="innerHTML"
+                hx-include="[name='severity'],[name='date_from'],[name='date_to']">
+          <option value="">{{ _('All Servers') }}</option>
+          {% if servers_list is defined %}
+          {% for s in servers_list %}
+          <option value="{{ s.id }}">{{ s.hostname }}</option>
+          {% endfor %}
+          {% endif %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <label class="form-label small text-muted mb-1">{{ _('From') }}</label>
+        <input type="date" class="form-control form-control-sm" name="date_from"
+               hx-get="/alerts/history"
+               hx-target="#alert-history-pane"
+               hx-swap="innerHTML"
+               hx-trigger="change"
+               hx-include="[name='severity'],[name='server'],[name='date_to']">
+      </div>
+      <div class="col-auto">
+        <label class="form-label small text-muted mb-1">{{ _('To') }}</label>
+        <input type="date" class="form-control form-control-sm" name="date_to"
+               hx-get="/alerts/history"
+               hx-target="#alert-history-pane"
+               hx-swap="innerHTML"
+               hx-trigger="change"
+               hx-include="[name='severity'],[name='server'],[name='date_from']">
+      </div>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>{{ _('Time') }}</th>
+            <th>{{ _('Severity') }}</th>
+            <th>{{ _('Server') }}</th>
+            <th>{{ _('Title') }}</th>
+            <th>{{ _('Status') }}</th>
+            <th>{{ _('Resolved at') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if alert_history is defined %}
+          {% for alert in alert_history %}
+          <tr>
+            <td class="text-nowrap small">
+              <span class="relative-time" data-timestamp="{{ alert.created_at | default('') }}">{{ alert.time_display | default('') }}</span>
+            </td>
+            <td>
+              <span class="badge
+                {% if alert.severity == 'critical' %}bg-danger
+                {% elif alert.severity == 'warning' %}bg-warning text-dark
+                {% else %}bg-info text-dark{% endif %}">
+                {{ alert.severity | default('info') }}
+              </span>
+            </td>
+            <td><a href="/servers/{{ alert.server_id }}" class="text-decoration-none small">{{ alert.server_name | default('') }}</a></td>
+            <td class="small">{{ alert.title | default('') }}</td>
+            <td>
+              {% if alert.resolved %}
+              <span class="badge bg-success">{{ _('Resolved') }}</span>
+              {% else %}
+              <span class="badge bg-danger">{{ _('Active') }}</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ alert.resolved_at | default('') }}</td>
+          </tr>
+          {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if history_pagination is defined %}
+  <div class="card-footer bg-white">
+    {% set pagination = history_pagination %}
+    {% include 'components/pagination.html' %}
+  </div>
+  {% endif %}
+</div>
+</template>
+{% endif %}
+
+{% if alert_rules is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('alert-rules-pane').innerHTML = document.getElementById('rules-content-tpl').innerHTML;
+});
+</script>
+<template id="rules-content-tpl">
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>{{ _('Name') }}</th>
+            <th>{{ _('Category') }}</th>
+            <th>{{ _('Severity') }}</th>
+            <th>{{ _('Enabled') }}</th>
+            <th>{{ _('Cooldown') }}</th>
+            <th>{{ _('Telegram') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rule in alert_rules %}
+          <tr>
+            <td>
+              {% if rule.built_in %}
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-lock-fill text-muted me-1" viewBox="0 0 16 16" data-bs-toggle="tooltip" title="{{ _('Built-in rule') }}">
+                <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+              </svg>
+              {% endif %}
+              <span class="fw-semibold small">{{ rule.name | default('') }}</span>
+            </td>
+            <td>
+              <span class="badge bg-secondary bg-opacity-25 text-dark">{{ rule.category | default('') }}</span>
+            </td>
+            <td>
+              <span class="badge
+                {% if rule.severity == 'critical' %}bg-danger
+                {% elif rule.severity == 'warning' %}bg-warning text-dark
+                {% else %}bg-info text-dark{% endif %}">
+                {{ rule.severity | default('info') }}
+              </span>
+            </td>
+            <td>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       {% if rule.enabled %}checked{% endif %}
+                       hx-put="/api/alerts/rules/{{ rule.id }}/toggle"
+                       hx-swap="none"
+                       hx-vals='js:{"enabled": event.target.checked}'>
+              </div>
+            </td>
+            <td class="small text-muted">{{ rule.cooldown_minutes | default(0) }} {{ _('min') }}</td>
+            <td>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       {% if rule.telegram_enabled %}checked{% endif %}
+                       hx-put="/api/alerts/rules/{{ rule.id }}/telegram"
+                       hx-swap="none"
+                       hx-vals='js:{"enabled": event.target.checked}'>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</template>
+{% endif %}
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+function alertsApp() {
+  return {
+    init() {
+      this.updateRelativeTimes();
+      setInterval(() => this.updateRelativeTimes(), 30000);
+    },
+    updateRelativeTimes() {
+      document.querySelectorAll('.relative-time[data-timestamp]').forEach(el => {
+        const ts = el.getAttribute('data-timestamp');
+        if (ts && window.RaidMonitor) {
+          el.textContent = window.RaidMonitor.formatRelativeTime(ts);
+        }
+      });
+    }
+  };
+}
+
+document.addEventListener('htmx:afterSwap', function(event) {
+  const tooltipTriggerList = event.detail.target.querySelectorAll('[data-bs-toggle="tooltip"]');
+  tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+});
+</script>
+{% endblock %}

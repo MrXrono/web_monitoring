@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Settings') }} - {{ _('Agents') }} - RAID Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0 fw-bold">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-gear me-2" viewBox="0 0 16 16">
+      <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+      <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/>
+    </svg>
+    {{ _('Settings') }}
+  </h4>
+</div>
+
+<div class="row">
+  <!-- Settings Sidebar -->
+  <div class="col-lg-3 mb-3">
+    <div class="card border-0 shadow-sm">
+      <div class="list-group list-group-flush rounded">
+        <a href="/settings/general" class="list-group-item list-group-item-action"><i class="bi bi-sliders me-2"></i>{{ _('General') }}</a>
+        <a href="/settings/ldap" class="list-group-item list-group-item-action"><i class="bi bi-people me-2"></i>LDAP</a>
+        <a href="/settings/telegram" class="list-group-item list-group-item-action"><i class="bi bi-send me-2"></i>Telegram</a>
+        <a href="/settings/ssl" class="list-group-item list-group-item-action"><i class="bi bi-shield-lock me-2"></i>SSL</a>
+        <a href="/settings/agents" class="list-group-item list-group-item-action active"><i class="bi bi-box-seam me-2"></i>{{ _('Agents') }}</a>
+        <a href="/settings/debug" class="list-group-item list-group-item-action"><i class="bi bi-bug me-2"></i>{{ _('Debug') }}</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agents Settings Content -->
+  <div class="col-lg-9">
+    <!-- Agent Package Upload -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white">
+        <h5 class="card-title mb-0">{{ _('Agent Package') }}</h5>
+      </div>
+      <div class="card-body">
+        <div class="d-flex align-items-center mb-3">
+          <span class="text-muted me-2">{{ _('Current Version') }}:</span>
+          <span class="badge bg-primary fs-6">{{ agent_current_version | default('N/A') }}</span>
+        </div>
+
+        <form method="POST" action="/settings/agents/upload" enctype="multipart/form-data" class="mb-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token | default('') }}">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label for="agent_rpm" class="form-label fw-semibold">{{ _('Upload Agent RPM') }}</label>
+              <input type="file" class="form-control" id="agent_rpm" name="agent_rpm" accept=".rpm">
+            </div>
+            <div class="col-md-4">
+              <button type="submit" class="btn btn-primary w-100">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-upload me-1" viewBox="0 0 16 16">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                  <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                </svg>
+                {{ _('Upload') }}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Uploaded Packages List -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white">
+        <h5 class="card-title mb-0">{{ _('Uploaded Packages') }}</h5>
+      </div>
+      <div class="card-body p-0">
+        {% if agent_packages is defined and agent_packages | length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>{{ _('Version') }}</th>
+                <th>{{ _('Filename') }}</th>
+                <th>{{ _('Size') }}</th>
+                <th>{{ _('Uploaded') }}</th>
+                <th>{{ _('Actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for pkg in agent_packages %}
+              <tr>
+                <td>
+                  <span class="fw-semibold">{{ pkg.version | default('N/A') }}</span>
+                  {% if pkg.is_current %}
+                  <span class="badge bg-success ms-1">{{ _('Current') }}</span>
+                  {% endif %}
+                </td>
+                <td class="small text-muted">{{ pkg.filename | default('') }}</td>
+                <td class="small text-muted">{{ pkg.size | default('') }}</td>
+                <td class="small text-muted">{{ pkg.uploaded_at | default('') }}</td>
+                <td>
+                  {% if not pkg.is_current %}
+                  <button class="btn btn-sm btn-outline-primary"
+                          hx-put="/api/settings/agents/packages/{{ pkg.id }}/set-current"
+                          hx-swap="none"
+                          hx-confirm="{{ _('Set this version as current?') }}">
+                    {{ _('Set Current') }}
+                  </button>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <p class="mb-0">{{ _('No packages uploaded yet.') }}</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- StorCLI Package -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white">
+        <h5 class="card-title mb-0">{{ _('StorCLI Package') }}</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="/settings/agents/storcli-upload" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token | default('') }}">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label for="storcli_rpm" class="form-label fw-semibold">{{ _('Upload storcli64 RPM') }}</label>
+              <input type="file" class="form-control" id="storcli_rpm" name="storcli_rpm" accept=".rpm">
+              <div class="form-text">{{ _('Upload the storcli64 RPM package for agent distribution.') }}</div>
+            </div>
+            <div class="col-md-4">
+              <button type="submit" class="btn btn-primary w-100">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-upload me-1" viewBox="0 0 16 16">
+                  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                  <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+                </svg>
+                {{ _('Upload') }}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

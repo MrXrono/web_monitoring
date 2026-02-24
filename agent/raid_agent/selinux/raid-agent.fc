@@ -1,0 +1,32 @@
+# SELinux file contexts for RAID Monitor Agent
+#
+# This file defines the security contexts for all files
+# associated with the raid-agent daemon.
+
+# Application directory and Python source
+/opt/raid-agent(/.*)?                                   gen_context(system_u:object_r:raid_agent_var_t,s0)
+
+# Virtual environment and executables
+/opt/raid-agent/venv(/.*)?                              gen_context(system_u:object_r:raid_agent_var_t,s0)
+/opt/raid-agent/venv/bin/python.*                       gen_context(system_u:object_r:raid_agent_exec_t,s0)
+
+# Configuration
+/etc/raid-agent(/.*)?                                   gen_context(system_u:object_r:raid_agent_conf_t,s0)
+/etc/raid-agent/config\.yml                             gen_context(system_u:object_r:raid_agent_conf_t,s0)
+
+# Log files
+/var/log/raid-agent(/.*)?                               gen_context(system_u:object_r:raid_agent_log_t,s0)
+
+# systemd service file
+/usr/lib/systemd/system/raid-agent\.service             gen_context(system_u:object_r:systemd_unit_file_t,s0)
+
+# storcli64 binary (MegaRAID StorCLI)
+/opt/MegaRAID/storcli/storcli64                         gen_context(system_u:object_r:storcli_exec_t,s0)
+/opt/MegaRAID/storcli64/storcli64                       gen_context(system_u:object_r:storcli_exec_t,s0)
+/usr/local/bin/storcli64                                gen_context(system_u:object_r:storcli_exec_t,s0)
+/usr/bin/storcli64                                      gen_context(system_u:object_r:storcli_exec_t,s0)
+/usr/sbin/storcli64                                     gen_context(system_u:object_r:storcli_exec_t,s0)
+
+# perccli64 (Dell PERC equivalent)
+/opt/MegaRAID/perccli/perccli64                         gen_context(system_u:object_r:storcli_exec_t,s0)
+/opt/dell/perccli/perccli64                             gen_context(system_u:object_r:storcli_exec_t,s0)

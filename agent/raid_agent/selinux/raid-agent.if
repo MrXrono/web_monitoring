@@ -1,0 +1,190 @@
+## <summary>Policy interface for the RAID Monitor Agent.</summary>
+## <desc>
+##   <p>
+##     Contains interfaces for interacting with the raid-agent SELinux policy.
+##     These interfaces allow other SELinux modules to grant permissions
+##     to interact with the RAID Monitor Agent's domain, files, and logs.
+##   </p>
+## </desc>
+
+########################################
+## <summary>
+##   Execute raid-agent in the raid_agent_t domain.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed to transition.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_domtrans',`
+    gen_require(`
+        type raid_agent_t, raid_agent_exec_t;
+    ')
+
+    corecmd_search_bin($1)
+    domtrans_pattern($1, raid_agent_exec_t, raid_agent_t)
+')
+
+########################################
+## <summary>
+##   Execute raid-agent in the caller domain.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_exec',`
+    gen_require(`
+        type raid_agent_exec_t;
+    ')
+
+    corecmd_search_bin($1)
+    can_exec($1, raid_agent_exec_t)
+')
+
+########################################
+## <summary>
+##   Read raid-agent configuration files.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_read_conf',`
+    gen_require(`
+        type raid_agent_conf_t;
+    ')
+
+    files_search_etc($1)
+    read_files_pattern($1, raid_agent_conf_t, raid_agent_conf_t)
+')
+
+########################################
+## <summary>
+##   Manage raid-agent configuration files.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_manage_conf',`
+    gen_require(`
+        type raid_agent_conf_t;
+    ')
+
+    files_search_etc($1)
+    manage_files_pattern($1, raid_agent_conf_t, raid_agent_conf_t)
+')
+
+########################################
+## <summary>
+##   Read raid-agent log files.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_read_log',`
+    gen_require(`
+        type raid_agent_log_t;
+    ')
+
+    logging_search_logs($1)
+    read_files_pattern($1, raid_agent_log_t, raid_agent_log_t)
+')
+
+########################################
+## <summary>
+##   Manage raid-agent log files.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_manage_log',`
+    gen_require(`
+        type raid_agent_log_t;
+    ')
+
+    logging_search_logs($1)
+    manage_files_pattern($1, raid_agent_log_t, raid_agent_log_t)
+')
+
+########################################
+## <summary>
+##   Send signals to the raid-agent process.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_signal',`
+    gen_require(`
+        type raid_agent_t;
+    ')
+
+    allow $1 raid_agent_t:process { signal sigkill };
+')
+
+########################################
+## <summary>
+##   Connect to raid-agent over a unix stream socket.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_stream_connect',`
+    gen_require(`
+        type raid_agent_t;
+    ')
+
+    allow $1 raid_agent_t:unix_stream_socket connectto;
+')
+
+########################################
+## <summary>
+##   All of the rules required to administrate
+##   a raid-agent environment.
+## </summary>
+## <param name="domain">
+##   <summary>
+##     Domain allowed access.
+##   </summary>
+## </param>
+## <param name="role">
+##   <summary>
+##     Role allowed access.
+##   </summary>
+## </param>
+#
+interface(`raid_agent_admin',`
+    gen_require(`
+        type raid_agent_t, raid_agent_conf_t, raid_agent_log_t;
+        type raid_agent_exec_t, raid_agent_var_t;
+    ')
+
+    allow $1 raid_agent_t:process { ptrace signal_perms };
+    ps_process_pattern($1, raid_agent_t)
+
+    raid_agent_manage_conf($1)
+    raid_agent_manage_log($1)
+
+    files_search_var($1)
+    admin_pattern($1, raid_agent_var_t)
+')

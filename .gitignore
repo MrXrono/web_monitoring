@@ -1,0 +1,53 @@
+# Environment
+.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+pgdata/
+
+# SSL certificates (generated)
+nginx/ssl/server.crt
+nginx/ssl/server.key
+
+# Uploads
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Backups
+backups/
+
+# Packages (uploaded by admin)
+server/storcli_packages/*
+!server/storcli_packages/.gitkeep
+server/agent_packages/*
+!server/agent_packages/.gitkeep
+
+# Logs
+*.log
+
+# RPM build
+agent/BUILD/
+agent/RPMS/
+agent/SRPMS/
+agent/SOURCES/

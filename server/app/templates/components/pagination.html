@@ -1,0 +1,96 @@
+{% if pagination is defined and pagination.total_pages is defined and pagination.total_pages > 1 %}
+<nav aria-label="{{ _('Page navigation') }}">
+  <ul class="pagination pagination-sm justify-content-center mb-0">
+    <!-- Previous Button -->
+    <li class="page-item {% if pagination.current_page <= 1 %}disabled{% endif %}">
+      <a class="page-link"
+         {% if pagination.current_page > 1 %}
+         href="{{ pagination.base_url }}?page={{ pagination.current_page - 1 }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         {% if pagination.htmx is defined and pagination.htmx %}
+         hx-get="{{ pagination.base_url }}?page={{ pagination.current_page - 1 }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         hx-target="{{ pagination.htmx_target | default('#content-area') }}"
+         hx-swap="innerHTML"
+         hx-push-url="true"
+         {% endif %}
+         {% endif %}
+         aria-label="{{ _('Previous') }}">
+        <span aria-hidden="true">&laquo;</span>
+      </a>
+    </li>
+
+    <!-- First page -->
+    {% if pagination.current_page > 3 %}
+    <li class="page-item">
+      <a class="page-link"
+         href="{{ pagination.base_url }}?page=1{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         {% if pagination.htmx is defined and pagination.htmx %}
+         hx-get="{{ pagination.base_url }}?page=1{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         hx-target="{{ pagination.htmx_target | default('#content-area') }}"
+         hx-swap="innerHTML"
+         hx-push-url="true"
+         {% endif %}>1</a>
+    </li>
+    {% if pagination.current_page > 4 %}
+    <li class="page-item disabled"><span class="page-link">...</span></li>
+    {% endif %}
+    {% endif %}
+
+    <!-- Page numbers -->
+    {% set start_page = [pagination.current_page - 2, 1] | max %}
+    {% set end_page = [pagination.current_page + 2, pagination.total_pages] | min %}
+    {% for page_num in range(start_page, end_page + 1) %}
+    <li class="page-item {% if page_num == pagination.current_page %}active{% endif %}">
+      <a class="page-link"
+         href="{{ pagination.base_url }}?page={{ page_num }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         {% if pagination.htmx is defined and pagination.htmx %}
+         hx-get="{{ pagination.base_url }}?page={{ page_num }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         hx-target="{{ pagination.htmx_target | default('#content-area') }}"
+         hx-swap="innerHTML"
+         hx-push-url="true"
+         {% endif %}>{{ page_num }}</a>
+    </li>
+    {% endfor %}
+
+    <!-- Last page -->
+    {% if pagination.current_page < pagination.total_pages - 2 %}
+    {% if pagination.current_page < pagination.total_pages - 3 %}
+    <li class="page-item disabled"><span class="page-link">...</span></li>
+    {% endif %}
+    <li class="page-item">
+      <a class="page-link"
+         href="{{ pagination.base_url }}?page={{ pagination.total_pages }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         {% if pagination.htmx is defined and pagination.htmx %}
+         hx-get="{{ pagination.base_url }}?page={{ pagination.total_pages }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         hx-target="{{ pagination.htmx_target | default('#content-area') }}"
+         hx-swap="innerHTML"
+         hx-push-url="true"
+         {% endif %}>{{ pagination.total_pages }}</a>
+    </li>
+    {% endif %}
+
+    <!-- Next Button -->
+    <li class="page-item {% if pagination.current_page >= pagination.total_pages %}disabled{% endif %}">
+      <a class="page-link"
+         {% if pagination.current_page < pagination.total_pages %}
+         href="{{ pagination.base_url }}?page={{ pagination.current_page + 1 }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         {% if pagination.htmx is defined and pagination.htmx %}
+         hx-get="{{ pagination.base_url }}?page={{ pagination.current_page + 1 }}{% for key, val in pagination.params.items() %}&{{ key }}={{ val }}{% endfor %}"
+         hx-target="{{ pagination.htmx_target | default('#content-area') }}"
+         hx-swap="innerHTML"
+         hx-push-url="true"
+         {% endif %}
+         {% endif %}
+         aria-label="{{ _('Next') }}">
+        <span aria-hidden="true">&raquo;</span>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+<div class="text-center mt-2">
+  <small class="text-muted">
+    {{ _('Page') }} {{ pagination.current_page }} {{ _('of') }} {{ pagination.total_pages }}
+    ({{ pagination.total_items | default(0) }} {{ _('items') }})
+  </small>
+</div>
+{% endif %}

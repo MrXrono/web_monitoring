@@ -1,0 +1,19 @@
+[Unit]
+Description=RAID Monitor Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/raid-agent/venv/bin/python -m raid_agent.main
+WorkingDirectory=/opt/raid-agent
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+User=root
+Group=root
+Environment=PYTHONPATH=/opt/raid-agent
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,184 @@
+policy_module(raid-agent, 1.0.0)
+
+########################################
+#
+# Declarations
+#
+
+# Define the raid_agent_t domain type for the daemon process
+type raid_agent_t;
+type raid_agent_exec_t;
+
+# Define types for agent files
+type raid_agent_conf_t;
+type raid_agent_log_t;
+type raid_agent_var_t;
+
+# Mark raid_agent_exec_t as an entry point for raid_agent_t domain
+init_daemon_domain(raid_agent_t, raid_agent_exec_t)
+
+# Allow systemd to manage the service
+systemd_unit_file(raid_agent_t)
+
+########################################
+#
+# raid_agent_t policy - Local policy
+#
+
+# -----------------------------------------------
+# Basic process permissions
+# -----------------------------------------------
+
+# Allow standard process operations
+allow raid_agent_t self:process { signal sigkill sigstop signull fork execmem setpgid };
+allow raid_agent_t self:fifo_file { read write getattr ioctl };
+allow raid_agent_t self:unix_stream_socket { create connect read write getattr shutdown };
+allow raid_agent_t self:unix_dgram_socket { create connect read write getattr };
+allow raid_agent_t self:tcp_socket { create connect read write getattr setopt shutdown bind listen accept };
+allow raid_agent_t self:udp_socket { create connect read write getattr };
+
+# -----------------------------------------------
+# Execute storcli64 binary
+# -----------------------------------------------
+
+# Allow executing storcli64 (typically in /opt/MegaRAID/storcli/)
+type storcli_exec_t;
+allow raid_agent_t storcli_exec_t:file { read open execute execute_no_trans getattr map };
+
+# Allow searching /opt/MegaRAID directory tree
+allow raid_agent_t usr_t:dir { search getattr open read };
+allow raid_agent_t usr_t:file { read open getattr };
+
+# -----------------------------------------------
+# Configuration file access
+# -----------------------------------------------
+
+# Allow reading /etc/raid-agent/config.yml
+allow raid_agent_t raid_agent_conf_t:dir { search getattr open read };
+allow raid_agent_t raid_agent_conf_t:file { read write open getattr create rename unlink setattr lock };
+
+# Allow reading /etc directory
+allow raid_agent_t etc_t:dir { search getattr open read };
+allow raid_agent_t etc_t:file { read open getattr };
+
+# -----------------------------------------------
+# Log file access
+# -----------------------------------------------
+
+# Allow writing to /var/log/raid-agent/
+allow raid_agent_t raid_agent_log_t:dir { search getattr open read write add_name remove_name create };
+allow raid_agent_t raid_agent_log_t:file { read write open getattr create append rename unlink setattr lock };
+
+# Standard log directory access
+logging_log_filetrans(raid_agent_t, raid_agent_log_t, { file dir })
+
+# -----------------------------------------------
+# Network access - HTTPS (port 443)
+# -----------------------------------------------
+
+# Allow TCP connections to HTTPS port
+corenet_tcp_connect_http_port(raid_agent_t)
+corenet_tcp_connect_http_cache_port(raid_agent_t)
+
+# Allow DNS resolution
+sysnet_dns_name_resolve(raid_agent_t)
+corenet_tcp_connect_dns_port(raid_agent_t)
+corenet_udp_bind_dns_port(raid_agent_t)
+
+# Allow generic network operations
+corenet_tcp_sendrecv_generic_if(raid_agent_t)
+corenet_tcp_sendrecv_generic_node(raid_agent_t)
+
+# -----------------------------------------------
+# Execute rpm for self-update and storcli install
+# -----------------------------------------------
+
+# Allow executing rpm binary
+rpm_exec(raid_agent_t)
+rpm_read_db(raid_agent_t)
+
+# Allow executing package manager operations
+allow raid_agent_t rpm_exec_t:file { read open execute execute_no_trans getattr map };
+allow raid_agent_t rpm_var_lib_t:dir { search getattr open read };
+allow raid_agent_t rpm_var_lib_t:file { read open getattr };
+
+# Allow writing to /tmp for RPM downloads
+allow raid_agent_t tmp_t:dir { search getattr open read write add_name remove_name };
+allow raid_agent_t tmp_t:file { read write open getattr create rename unlink setattr };
+
+# -----------------------------------------------
+# Read system files for system_info collection
+# -----------------------------------------------
+
+# Allow reading /proc/cpuinfo
+allow raid_agent_t proc_t:dir { search getattr open read };
+allow raid_agent_t proc_t:file { read open getattr };
+
+# Allow reading /proc/meminfo
+kernel_read_system_state(raid_agent_t)
+
+# Allow reading /proc/uptime
+allow raid_agent_t proc_t:file { read open getattr };
+
+# Allow reading /proc/net/fib_trie for IP detection
+kernel_read_network_state(raid_agent_t)
+
+# Allow reading /etc/os-release
+files_read_etc_files(raid_agent_t)
+files_read_etc_runtime_files(raid_agent_t)
+
+# Allow reading hostname
+kernel_read_kernel_sysctls(raid_agent_t)
+
+# -----------------------------------------------
+# Python and virtualenv execution
+# -----------------------------------------------
+
+# Allow executing Python interpreter from virtualenv
+allow raid_agent_t raid_agent_var_t:dir { search getattr open read };
+allow raid_agent_t raid_agent_var_t:file { read open execute execute_no_trans getattr map };
+allow raid_agent_t raid_agent_var_t:lnk_file { read getattr };
+
+# Allow reading shared libraries
+libs_use_ld_so(raid_agent_t)
+libs_use_shared_libs(raid_agent_t)
+
+# Allow reading locale and timezone
+miscfiles_read_localization(raid_agent_t)
+
+# -----------------------------------------------
+# systemctl for self-restart after update
+# -----------------------------------------------
+
+# Allow executing systemctl
+systemd_exec_systemctl(raid_agent_t)
+init_reload_services(raid_agent_t)
+
+# -----------------------------------------------
+# SSL/TLS certificate access
+# -----------------------------------------------
+
+# Allow reading system CA certificates
+miscfiles_read_certs(raid_agent_t)
+
+# Allow reading custom CA bundle
+allow raid_agent_t cert_t:dir { search getattr open read };
+allow raid_agent_t cert_t:file { read open getattr };
+
+# -----------------------------------------------
+# Socket operations for network communication
+# -----------------------------------------------
+
+# Allow name resolution via nsswitch
+auth_use_nsswitch(raid_agent_t)
+
+# -----------------------------------------------
+# Device access for storcli64
+# -----------------------------------------------
+
+# storcli64 needs access to MegaRAID device nodes
+dev_read_generic_chr_files(raid_agent_t)
+dev_rw_generic_chr_files(raid_agent_t)
+
+# Allow access to /dev/megaraid_sas_ioctl_node
+allow raid_agent_t device_t:chr_file { read write open ioctl getattr };

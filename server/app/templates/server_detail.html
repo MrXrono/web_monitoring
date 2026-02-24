@@ -1,0 +1,708 @@
+{% extends "base.html" %}
+
+{% block title %}{{ server.hostname | default('Server') }} - RAID Monitor{% endblock %}
+
+{% block content %}
+<div x-data="serverDetailApp()">
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb mb-0">
+      <li class="breadcrumb-item"><a href="/dashboard" class="text-decoration-none">{{ _('Dashboard') }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ server.hostname | default('Server') }}</li>
+    </ol>
+  </nav>
+
+  <!-- Server Info Header -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body p-3 p-md-4">
+      <div class="row align-items-center">
+        <div class="col-auto">
+          <span class="status-dot-lg
+            {% if server.status == 'online' %}status-online
+            {% elif server.status == 'warning' %}status-warning
+            {% elif server.status == 'critical' %}status-critical
+            {% else %}status-offline{% endif %}"></span>
+        </div>
+        <div class="col">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+            <h4 class="mb-0 fw-bold">{{ server.hostname | default('Unknown') }}</h4>
+            <span class="badge
+              {% if server.status == 'online' %}bg-success
+              {% elif server.status == 'warning' %}bg-warning text-dark
+              {% elif server.status == 'critical' %}bg-danger
+              {% else %}bg-secondary{% endif %}">
+              {% if server.status == 'online' %}{{ _('Online') }}
+              {% elif server.status == 'warning' %}{{ _('Warning') }}
+              {% elif server.status == 'critical' %}{{ _('Critical') }}
+              {% else %}{{ _('Offline') }}{% endif %}
+            </span>
+          </div>
+          <div class="row g-3 mt-1">
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>IP:</strong> {{ server.ip | default('N/A') }}
+              </small>
+            </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>OS:</strong> {{ server.os_name | default('N/A') }} {{ server.os_version | default('') }}
+              </small>
+            </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>{{ _('Kernel') }}:</strong> {{ server.kernel | default('N/A') }}
+              </small>
+            </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>CPU:</strong> {{ server.cpu | default('N/A') }}
+              </small>
+            </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>RAM:</strong> {{ server.ram | default('N/A') }}
+              </small>
+            </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>{{ _('Uptime') }}:</strong> {{ server.uptime | default('N/A') }}
+              </small>
+            </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>{{ _('Agent') }}:</strong> v{{ server.agent_version | default('N/A') }}
+              </small>
+            </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>{{ _('Last seen') }}:</strong>
+                <span class="relative-time" data-timestamp="{{ server.last_seen | default('') }}">{{ server.last_seen_display | default('N/A') }}</span>
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab Navigation -->
+  <ul class="nav nav-tabs mb-3" id="serverTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview-pane"
+              type="button" role="tab" aria-controls="overview-pane" aria-selected="true">
+        {{ _('Overview') }}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="controllers-tab" data-bs-toggle="tab" data-bs-target="#controllers-pane"
+              type="button" role="tab" aria-controls="controllers-pane" aria-selected="false"
+              hx-get="/servers/{{ server.id }}/controllers"
+              hx-target="#controllers-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Controllers') }}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="vd-tab" data-bs-toggle="tab" data-bs-target="#vd-pane"
+              type="button" role="tab" aria-controls="vd-pane" aria-selected="false"
+              hx-get="/servers/{{ server.id }}/virtual-drives"
+              hx-target="#vd-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Virtual Drives') }}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="pd-tab" data-bs-toggle="tab" data-bs-target="#pd-pane"
+              type="button" role="tab" aria-controls="pd-pane" aria-selected="false"
+              hx-get="/servers/{{ server.id }}/physical-drives"
+              hx-target="#pd-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Physical Drives') }}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="events-tab" data-bs-toggle="tab" data-bs-target="#events-pane"
+              type="button" role="tab" aria-controls="events-pane" aria-selected="false"
+              hx-get="/servers/{{ server.id }}/events"
+              hx-target="#events-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Events') }}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="agent-tab" data-bs-toggle="tab" data-bs-target="#agent-pane"
+              type="button" role="tab" aria-controls="agent-pane" aria-selected="false"
+              hx-get="/servers/{{ server.id }}/agent"
+              hx-target="#agent-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Agent') }}
+      </button>
+    </li>
+  </ul>
+
+  <!-- Tab Content -->
+  <div class="tab-content" id="serverTabContent">
+    <!-- Overview Tab -->
+    <div class="tab-pane fade show active" id="overview-pane" role="tabpanel" aria-labelledby="overview-tab">
+      <div class="row g-3">
+        <div class="col-6 col-lg-3">
+          <div class="card border-0 shadow-sm text-center p-3">
+            <div class="fs-3 fw-bold text-primary">{{ server.controllers_count | default(0) }}</div>
+            <small class="text-muted">{{ _('Controllers') }}</small>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="card border-0 shadow-sm text-center p-3">
+            <div class="fs-3 fw-bold">
+              <span class="text-success">{{ server.vd_ok | default(0) }}</span>
+              <span class="text-muted fs-5">/</span>
+              <span class="{% if server.vd_ok is defined and server.vd_total is defined and server.vd_ok < server.vd_total %}text-danger{% else %}text-muted{% endif %}">{{ server.vd_total | default(0) }}</span>
+            </div>
+            <small class="text-muted">{{ _('Virtual Drives') }}</small>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="card border-0 shadow-sm text-center p-3">
+            <div class="fs-3 fw-bold">
+              <span class="text-success">{{ server.pd_ok | default(0) }}</span>
+              <span class="text-muted fs-5">/</span>
+              <span class="{% if server.pd_ok is defined and server.pd_total is defined and server.pd_ok < server.pd_total %}text-danger{% else %}text-muted{% endif %}">{{ server.pd_total | default(0) }}</span>
+            </div>
+            <small class="text-muted">{{ _('Physical Drives') }}</small>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="card border-0 shadow-sm text-center p-3">
+            <div class="fs-3 fw-bold
+              {% if server.active_alerts is defined and server.active_alerts > 0 %}text-danger{% else %}text-success{% endif %}">
+              {{ server.active_alerts | default(0) }}
+            </div>
+            <small class="text-muted">{{ _('Active Alerts') }}</small>
+          </div>
+        </div>
+      </div>
+
+      {% if server.recent_events is defined and server.recent_events | length > 0 %}
+      <div class="card border-0 shadow-sm mt-4">
+        <div class="card-header bg-white">
+          <h6 class="mb-0">{{ _('Recent Events') }}</h6>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>{{ _('Time') }}</th>
+                  <th>{{ _('Severity') }}</th>
+                  <th>{{ _('Description') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for event in server.recent_events[:5] %}
+                <tr>
+                  <td class="text-nowrap small">
+                    <span class="relative-time" data-timestamp="{{ event.timestamp | default('') }}">{{ event.time_display | default('') }}</span>
+                  </td>
+                  <td>
+                    <span class="badge
+                      {% if event.severity == 'critical' %}bg-danger
+                      {% elif event.severity == 'warning' %}bg-warning text-dark
+                      {% elif event.severity == 'info' %}bg-info text-dark
+                      {% else %}bg-secondary{% endif %}">
+                      {{ event.severity | default('info') }}
+                    </span>
+                  </td>
+                  <td class="small">{{ event.description | default('') }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Controllers Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="controllers-pane" role="tabpanel" aria-labelledby="controllers-tab">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+        <p class="text-muted mt-2">{{ _('Loading controllers...') }}</p>
+      </div>
+    </div>
+
+    <!-- Virtual Drives Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="vd-pane" role="tabpanel" aria-labelledby="vd-tab">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+        <p class="text-muted mt-2">{{ _('Loading virtual drives...') }}</p>
+      </div>
+    </div>
+
+    <!-- Physical Drives Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="pd-pane" role="tabpanel" aria-labelledby="pd-tab">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+        <p class="text-muted mt-2">{{ _('Loading physical drives...') }}</p>
+      </div>
+    </div>
+
+    <!-- Events Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="events-pane" role="tabpanel" aria-labelledby="events-tab">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+        <p class="text-muted mt-2">{{ _('Loading events...') }}</p>
+      </div>
+    </div>
+
+    <!-- Agent Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="agent-pane" role="tabpanel" aria-labelledby="agent-tab">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+        <p class="text-muted mt-2">{{ _('Loading agent info...') }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SMART Data Modal -->
+<div class="modal fade" id="smartModal" tabindex="-1" aria-labelledby="smartModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="smartModalLabel">{{ _('SMART Data') }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="smart-modal-body">
+        <div class="text-center py-4">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">{{ _('Loading...') }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ _('Close') }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+function serverDetailApp() {
+  return {
+    init() {
+      this.updateRelativeTimes();
+      setInterval(() => this.updateRelativeTimes(), 30000);
+    },
+    updateRelativeTimes() {
+      document.querySelectorAll('.relative-time[data-timestamp]').forEach(el => {
+        const ts = el.getAttribute('data-timestamp');
+        if (ts) {
+          el.textContent = window.RaidMonitor.formatRelativeTime(ts);
+        }
+      });
+    }
+  };
+}
+
+/* Inline tab content templates for HTMX responses.
+   The server returns these as partials. Below are the expected structures
+   that the HTMX endpoints should return. */
+
+/* Controllers partial structure:
+   Each controller rendered as a card with sub-sections for BBU, temperature, etc.
+*/
+document.addEventListener('htmx:afterSwap', function(event) {
+  // Re-initialize tooltips after HTMX swap
+  const tooltipTriggerList = event.detail.target.querySelectorAll('[data-bs-toggle="tooltip"]');
+  tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+
+  // Update relative times in swapped content
+  event.detail.target.querySelectorAll('.relative-time[data-timestamp]').forEach(el => {
+    const ts = el.getAttribute('data-timestamp');
+    if (ts && window.RaidMonitor) {
+      el.textContent = window.RaidMonitor.formatRelativeTime(ts);
+    }
+  });
+});
+</script>
+
+<!-- Inline content templates for when tabs are loaded directly (non-HTMX fallback) -->
+{% if controllers is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('controllers-pane').innerHTML = document.getElementById('controllers-content-tpl').innerHTML;
+});
+</script>
+<template id="controllers-content-tpl">
+{% for ctrl in controllers %}
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <h6 class="mb-0">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cpu me-2" viewBox="0 0 16 16">
+        <path d="M5 0a.5.5 0 0 1 .5.5V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2A2.5 2.5 0 0 1 14 4.5h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14A2.5 2.5 0 0 1 11.5 14v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14A2.5 2.5 0 0 1 2 11.5H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2A2.5 2.5 0 0 1 4.5 2V.5A.5.5 0 0 1 5 0z"/>
+      </svg>
+      {{ ctrl.model | default('Controller') }} #{{ ctrl.id | default(loop.index0) }}
+    </h6>
+    <span class="badge {% if ctrl.status == 'Optimal' or ctrl.status == 'Opt' %}bg-success{% elif ctrl.status == 'Degraded' or ctrl.status == 'Dgrd' %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+      {{ ctrl.status | default('N/A') }}
+    </span>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">{{ _('Serial') }}:</td><td class="fw-semibold">{{ ctrl.serial | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Firmware') }}:</td><td class="fw-semibold">{{ ctrl.firmware | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Rebuild Rate') }}:</td><td class="fw-semibold">{{ ctrl.rebuild_rate | default('N/A') }}%</td></tr>
+          <tr><td class="text-muted">{{ _('Patrol Read') }}:</td><td class="fw-semibold">{{ ctrl.patrol_read | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('CC Status') }}:</td><td class="fw-semibold">{{ ctrl.cc_status | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Alarm') }}:</td><td class="fw-semibold">{{ ctrl.alarm | default('N/A') }}</td></tr>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <!-- Temperature -->
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <small class="text-muted fw-semibold">{{ _('Temperature') }}</small>
+            <span class="badge {% if ctrl.temperature is defined and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature > 60 %}bg-warning text-dark{% else %}bg-success{% endif %}">
+              {{ ctrl.temperature | default(0) }} C
+            </span>
+          </div>
+          <div class="progress" style="height: 8px;">
+            <div class="progress-bar {% if ctrl.temperature is defined and ctrl.temperature > 80 %}bg-danger{% elif ctrl.temperature is defined and ctrl.temperature > 60 %}bg-warning{% else %}bg-success{% endif %}"
+                 style="width: {{ [ctrl.temperature | default(0), 100] | min }}%"></div>
+          </div>
+        </div>
+        <!-- Memory -->
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">{{ _('Memory') }}:</td><td class="fw-semibold">{{ ctrl.memory_size | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Correctable Errors') }}:</td><td class="fw-semibold">{{ ctrl.memory_correctable_errors | default(0) }}</td></tr>
+          <tr><td class="text-muted">{{ _('Uncorrectable Errors') }}:</td><td class="fw-semibold {% if ctrl.memory_uncorrectable_errors is defined and ctrl.memory_uncorrectable_errors > 0 %}text-danger{% endif %}">{{ ctrl.memory_uncorrectable_errors | default(0) }}</td></tr>
+        </table>
+      </div>
+    </div>
+    <!-- BBU / CacheVault -->
+    {% if ctrl.bbu is defined %}
+    <div class="card bg-light border mt-3">
+      <div class="card-body p-3">
+        <h6 class="card-title small fw-bold mb-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-battery-charging me-1" viewBox="0 0 16 16">
+            <path d="M9.585 2.568a.5.5 0 0 1 .226.58L8.677 6.832h1.99a.5.5 0 0 1 .364.843l-5.334 5.667a.5.5 0 0 1-.842-.49L5.99 9.167H4a.5.5 0 0 1-.364-.843l5.334-5.667a.5.5 0 0 1 .615-.089z"/>
+            <path d="M2 4h4.332l-.94 1H2a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2.38l-.308 1H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
+            <path d="M2 6h1.646l-.94 1H2V6zm7.415-2H12a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H9.646l.308-1H12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H9.723L10.1 4h-.685z"/>
+          </svg>
+          BBU / CacheVault
+        </h6>
+        <div class="row g-2">
+          <div class="col-auto"><small class="text-muted">{{ _('Status') }}:</small> <span class="badge {% if ctrl.bbu.status == 'Optimal' or ctrl.bbu.status == 'Opt' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ ctrl.bbu.status | default('N/A') }}</span></div>
+          <div class="col-auto"><small class="text-muted">{{ _('Type') }}:</small> <strong class="small">{{ ctrl.bbu.type | default('N/A') }}</strong></div>
+          <div class="col-auto"><small class="text-muted">{{ _('Temp') }}:</small> <strong class="small">{{ ctrl.bbu.temperature | default('N/A') }} C</strong></div>
+          <div class="col-auto"><small class="text-muted">{{ _('Charge') }}:</small> <strong class="small">{{ ctrl.bbu.charge | default('N/A') }}</strong></div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% if not controllers or controllers | length == 0 %}
+<div class="text-center py-5 text-muted">
+  <p>{{ _('No controllers found for this server.') }}</p>
+</div>
+{% endif %}
+</template>
+{% endif %}
+
+{% if virtual_drives is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('vd-pane').innerHTML = document.getElementById('vd-content-tpl').innerHTML;
+});
+</script>
+<template id="vd-content-tpl">
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>VD#</th>
+            <th>{{ _('Name') }}</th>
+            <th>RAID</th>
+            <th>{{ _('State') }}</th>
+            <th>{{ _('Size') }}</th>
+            <th>{{ _('Cache') }}</th>
+            <th>IO</th>
+            <th>{{ _('Read') }}</th>
+            <th>{{ _('Drives') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for vd in virtual_drives %}
+          <tr>
+            <td class="fw-semibold">{{ vd.dg | default('') }}/{{ vd.vd | default('') }}</td>
+            <td>{{ vd.name | default('') }}</td>
+            <td>{{ vd.raid_type | default('') }}</td>
+            <td>
+              <span class="badge
+                {% if vd.state == 'Optl' %}bg-success
+                {% elif vd.state == 'Dgrd' %}bg-warning text-dark
+                {% elif vd.state == 'Pdgd' or vd.state == 'OfLn' %}bg-danger
+                {% elif vd.state == 'Rec' %}bg-info text-dark
+                {% else %}bg-secondary{% endif %}">
+                {{ vd.state | default('N/A') }}
+              </span>
+            </td>
+            <td class="text-nowrap">{{ vd.size | default('N/A') }}</td>
+            <td>{{ vd.cache | default('N/A') }}</td>
+            <td>{{ vd.io_policy | default('N/A') }}</td>
+            <td>{{ vd.read_policy | default('N/A') }}</td>
+            <td>{{ vd.drives_count | default(0) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% if not virtual_drives or virtual_drives | length == 0 %}
+<div class="text-center py-5 text-muted">
+  <p>{{ _('No virtual drives found for this server.') }}</p>
+</div>
+{% endif %}
+</template>
+{% endif %}
+
+{% if physical_drives is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('pd-pane').innerHTML = document.getElementById('pd-content-tpl').innerHTML;
+});
+</script>
+<template id="pd-content-tpl">
+<div class="card border-0 shadow-sm">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>EID:Slot</th>
+            <th>{{ _('State') }}</th>
+            <th>DG</th>
+            <th>{{ _('Size') }}</th>
+            <th>{{ _('Model') }}</th>
+            <th>{{ _('Type') }}</th>
+            <th>{{ _('Interface') }}</th>
+            <th>{{ _('Temp') }}</th>
+            <th title="{{ _('Media Errors') }}">Med Err</th>
+            <th title="{{ _('Other Errors') }}">Oth Err</th>
+            <th title="{{ _('Predictive Failure') }}">Pred.Fail</th>
+            <th>SMART</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pd in physical_drives %}
+          <tr class="pd-row {% if pd.smart_alert %}table-warning{% endif %}"
+              style="cursor: pointer;"
+              hx-get="/servers/{{ server.id }}/physical-drives/{{ pd.eid }}:{{ pd.slot }}/smart"
+              hx-target="#smart-modal-body"
+              hx-swap="innerHTML"
+              data-bs-toggle="modal"
+              data-bs-target="#smartModal"
+              title="{{ _('Click for SMART details') }}">
+            <td class="fw-semibold">{{ pd.eid | default('') }}:{{ pd.slot | default('') }}</td>
+            <td>
+              <span class="badge
+                {% if pd.state == 'Onln' or pd.state == 'Online' %}bg-success
+                {% elif pd.state == 'Offln' or pd.state == 'UBad' %}bg-danger
+                {% elif pd.state == 'Rbld' %}bg-info text-dark
+                {% elif pd.state == 'GHS' or pd.state == 'DHS' %}bg-cyan
+                {% else %}bg-secondary{% endif %}">
+                {{ pd.state | default('N/A') }}
+              </span>
+            </td>
+            <td>{{ pd.dg | default('') }}</td>
+            <td class="text-nowrap">{{ pd.size | default('N/A') }}</td>
+            <td class="small">{{ pd.model | default('N/A') }}</td>
+            <td>{{ pd.media_type | default('N/A') }}</td>
+            <td>{{ pd.interface | default('N/A') }}</td>
+            <td>
+              <span class="{% if pd.temperature is defined and pd.temperature > 50 %}text-danger fw-bold{% elif pd.temperature is defined and pd.temperature > 40 %}text-warning{% endif %}">
+                {{ pd.temperature | default('N/A') }}{% if pd.temperature is defined %} C{% endif %}
+              </span>
+            </td>
+            <td class="{% if pd.media_errors is defined and pd.media_errors > 0 %}text-danger fw-bold{% endif %}">{{ pd.media_errors | default(0) }}</td>
+            <td class="{% if pd.other_errors is defined and pd.other_errors > 0 %}text-warning fw-bold{% endif %}">{{ pd.other_errors | default(0) }}</td>
+            <td class="{% if pd.predictive_failure is defined and pd.predictive_failure > 0 %}text-danger fw-bold{% endif %}">{{ pd.predictive_failure | default(0) }}</td>
+            <td>
+              {% if pd.smart_alert %}
+              <span class="text-danger" title="{{ _('SMART Alert') }}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-exclamation-triangle-fill" viewBox="0 0 16 16">
+                  <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                </svg>
+              </span>
+              {% else %}
+              <span class="text-success">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-circle-fill" viewBox="0 0 16 16">
+                  <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+                </svg>
+              </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% if not physical_drives or physical_drives | length == 0 %}
+<div class="text-center py-5 text-muted">
+  <p>{{ _('No physical drives found for this server.') }}</p>
+</div>
+{% endif %}
+</template>
+{% endif %}
+
+{% if events is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('events-pane').innerHTML = document.getElementById('events-content-tpl').innerHTML;
+});
+</script>
+<template id="events-content-tpl">
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white">
+    <div class="d-flex justify-content-between align-items-center">
+      <h6 class="mb-0">{{ _('Events') }}</h6>
+      <select class="form-select form-select-sm w-auto"
+              hx-get="/servers/{{ server.id }}/events"
+              hx-target="#events-pane"
+              hx-swap="innerHTML"
+              name="severity">
+        <option value="">{{ _('All Severities') }}</option>
+        <option value="critical">{{ _('Critical') }}</option>
+        <option value="warning">{{ _('Warning') }}</option>
+        <option value="info">{{ _('Info') }}</option>
+      </select>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>{{ _('Time') }}</th>
+            <th>{{ _('Severity') }}</th>
+            <th>{{ _('Class') }}</th>
+            <th>{{ _('Description') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in events %}
+          <tr>
+            <td class="text-nowrap small">
+              <span class="relative-time" data-timestamp="{{ event.timestamp | default('') }}">{{ event.time_display | default('') }}</span>
+            </td>
+            <td>
+              <span class="badge
+                {% if event.severity == 'critical' %}bg-danger
+                {% elif event.severity == 'warning' %}bg-warning text-dark
+                {% elif event.severity == 'info' %}bg-info text-dark
+                {% else %}bg-secondary{% endif %}">
+                {{ event.severity | default('info') }}
+              </span>
+            </td>
+            <td class="small">{{ event.event_class | default('') }}</td>
+            <td class="small">{{ event.description | default('') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if events_pagination is defined %}
+  <div class="card-footer bg-white">
+    {% set pagination = events_pagination %}
+    {% include 'components/pagination.html' %}
+  </div>
+  {% endif %}
+</div>
+{% if not events or events | length == 0 %}
+<div class="text-center py-5 text-muted">
+  <p>{{ _('No events found for this server.') }}</p>
+</div>
+{% endif %}
+</template>
+{% endif %}
+
+{% if agent_info is defined %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('agent-pane').innerHTML = document.getElementById('agent-content-tpl').innerHTML;
+});
+</script>
+<template id="agent-content-tpl">
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">{{ _('Agent Version') }}:</td><td class="fw-semibold">{{ agent_info.agent_version | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('StorCLI Version') }}:</td><td class="fw-semibold">{{ agent_info.storcli_version | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Last Seen') }}:</td><td class="fw-semibold"><span class="relative-time" data-timestamp="{{ agent_info.last_seen | default('') }}">{{ agent_info.last_seen_display | default('N/A') }}</span></td></tr>
+          <tr><td class="text-muted">{{ _('Registered') }}:</td><td class="fw-semibold">{{ agent_info.registered_at | default('N/A') }}</td></tr>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">{{ _('Debug Logging') }}</label>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="debugToggle"
+                   {% if agent_info.debug_enabled %}checked{% endif %}
+                   hx-put="/api/servers/{{ server.id }}/agent/debug"
+                   hx-swap="none"
+                   hx-vals='{"enabled": true}'
+                   hx-on::before-request="this.setAttribute('hx-vals', JSON.stringify({enabled: this.checked}))">
+            <label class="form-check-label" for="debugToggle">
+              {{ _('Enable debug mode') }}
+            </label>
+          </div>
+        </div>
+        <button class="btn btn-outline-primary btn-sm"
+                hx-post="/api/servers/{{ server.id }}/agent/collect-logs"
+                hx-swap="none"
+                hx-indicator="#collect-spinner">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-download me-1" viewBox="0 0 16 16">
+            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+          </svg>
+          {{ _('Collect Logs') }}
+          <span id="collect-spinner" class="spinner-border spinner-border-sm ms-1 htmx-indicator" role="status"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+</template>
+{% endif %}
+{% endblock %}
