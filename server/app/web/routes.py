@@ -427,7 +427,14 @@ async def dashboard_page(
     current_user: dict = Depends(_require_auth),
 ):
     """Render the main dashboard with server list."""
-    # In production, fetch from database. Stub data for template rendering.
+    from app.database import async_session
+    from app.models.server import Server
+    from app.models.controller import Controller
+    from app.models.virtual_drive import VirtualDrive
+    from app.models.physical_drive import PhysicalDrive
+    from sqlalchemy import func
+    from sqlalchemy.orm import selectinload
+
     servers = []
     stats = {
         "servers_online": 0,
@@ -441,10 +448,106 @@ async def dashboard_page(
         "pd_problem": 0,
     }
 
+    per_page = 24
+    async with async_session() as db:
+        # Build query with filters
+        query = select(Server).options(
+            selectinload(Server.controllers).selectinload(Controller.virtual_drives),
+            selectinload(Server.controllers).selectinload(Controller.physical_drives),
+        )
+        if search:
+            query = query.where(
+                Server.hostname.ilike(f"%{search}%")
+                | Server.ip_address.ilike(f"%{search}%")
+            )
+        if status:
+            query = query.where(Server.status == status)
+
+        # Count total
+        count_q = select(func.count(Server.id))
+        if search:
+            count_q = count_q.where(
+                Server.hostname.ilike(f"%{search}%")
+                | Server.ip_address.ilike(f"%{search}%")
+            )
+        if status:
+            count_q = count_q.where(Server.status == status)
+        total_items = (await db.execute(count_q)).scalar() or 0
+
+        # Sort
+        sort_col = {
+            "hostname": Server.hostname,
+            "status": Server.status,
+            "last_seen": Server.last_seen,
+            "ip": Server.ip_address,
+        }.get(sort, Server.hostname)
+        query = query.order_by(sort_col)
+
+        # Paginate
+        offset = (page - 1) * per_page
+        query = query.offset(offset).limit(per_page)
+
+        result = await db.execute(query)
+        db_servers = result.unique().scalars().all()
+
+        # Build template-friendly server dicts
+        for srv in db_servers:
+            ctrl_count = len(srv.controllers) if srv.controllers else 0
+            vd_total = 0
+            vd_ok = 0
+            pd_total = 0
+            pd_ok = 0
+            for ctrl in (srv.controllers or []):
+                for vd in (ctrl.virtual_drives or []):
+                    vd_total += 1
+                    if vd.state and vd.state.lower() in ("optimal", "optl"):
+                        vd_ok += 1
+                for pd in (ctrl.physical_drives or []):
+                    pd_total += 1
+                    if pd.state and pd.state.lower() in ("online", "onln", "ugood", "jbod", "ghs", "dhs"):
+                        pd_ok += 1
+
+            servers.append({
+                "id": str(srv.id),
+                "hostname": srv.hostname,
+                "ip": srv.ip_address,
+                "status": srv.status or "unknown",
+                "os_name": srv.os_name,
+                "os_version": srv.os_version,
+                "agent_version": srv.agent_version,
+                "last_seen": srv.last_seen.isoformat() if srv.last_seen else "",
+                "last_seen_display": srv.last_seen.strftime("%d.%m %H:%M") if srv.last_seen else "N/A",
+                "controllers_count": ctrl_count,
+                "vd_total": vd_total,
+                "vd_ok": vd_ok,
+                "pd_total": pd_total,
+                "pd_ok": pd_ok,
+            })
+
+            # Accumulate global stats
+            stats["controllers_total"] += ctrl_count
+            stats["vd_total"] += vd_total
+            stats["vd_ok"] += vd_ok
+            stats["pd_total"] += pd_total
+            stats["pd_ok"] += pd_ok
+
+        # Global server stats (unfiltered)
+        total_servers = (await db.execute(select(func.count(Server.id)))).scalar() or 0
+        online_servers = (await db.execute(
+            select(func.count(Server.id)).where(Server.status == "online")
+        )).scalar() or 0
+
+        stats["servers_total"] = total_servers
+        stats["servers_online"] = online_servers
+        stats["vd_problem"] = stats["vd_total"] - stats["vd_ok"]
+        stats["pd_problem"] = stats["pd_total"] - stats["pd_ok"]
+
+    import math
+    total_pages = max(1, math.ceil(total_items / per_page))
     pagination = {
         "current_page": page,
-        "total_pages": 1,
-        "total_items": 0,
+        "total_pages": total_pages,
+        "total_items": total_items,
         "base_url": "/dashboard",
         "params": {},
         "htmx": True,
