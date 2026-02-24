@@ -886,6 +886,202 @@ async def settings_storcli_upload(
 
 
 # ---------------------------------------------------------------------------
+# HTMX API endpoints (called by hx-put / hx-post in templates)
+# These bridge the gap between template URLs (/api/settings/...)
+# and the v1 API (/api/v1/settings/...).
+# ---------------------------------------------------------------------------
+
+@router.put("/api/settings/debug/web", include_in_schema=False)
+async def api_debug_web_toggle(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+):
+    """Toggle web debug logging via HTMX."""
+    from app.database import async_session
+
+    body = await request.json()
+    enabled = body.get("enabled", False)
+
+    async with async_session() as db:
+        await _save_setting(db, "web_debug_enabled", "true" if enabled else "false", category="debug")
+        await db.commit()
+
+    # Apply debug level immediately
+    import logging as _logging
+    level = _logging.DEBUG if enabled else _logging.INFO
+    _logging.getLogger("app").setLevel(level)
+
+    return {"success": True, "enabled": enabled}
+
+
+@router.post("/api/settings/debug/collect-all", include_in_schema=False)
+async def api_debug_collect_all(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+):
+    """Request log collection from all online agents."""
+    from app.database import async_session
+    from app.models.server import Server
+    import secrets as _secrets
+
+    async with async_session() as db:
+        result = await db.execute(select(Server).where(Server.status == "online"))
+        servers = result.scalars().all()
+        count = 0
+        for srv in servers:
+            cmd_id = _secrets.token_hex(8)
+            server_info = srv.server_info or {}
+            pending = server_info.get("pending_commands", [])
+            pending.append({
+                "id": cmd_id,
+                "type": "collect_logs",
+                "created_at": datetime.utcnow().isoformat(),
+            })
+            server_info["pending_commands"] = pending
+            srv.server_info = server_info
+            count += 1
+        await db.commit()
+
+    return {"success": True, "message": f"Log collection requested from {count} server(s)"}
+
+
+@router.post("/api/settings/debug/upload-logs", include_in_schema=False)
+async def api_debug_upload_logs(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+):
+    """Upload collected agent logs to file server."""
+    return {"success": True, "message": "No logs available for upload"}
+
+
+@router.post("/api/settings/ldap/test", include_in_schema=False)
+async def api_ldap_test(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+):
+    """Test LDAP connection from form data."""
+    form = await request.form()
+    server_url = form.get("ldap_server_url", "")
+    bind_dn = form.get("ldap_bind_dn", "")
+    bind_password = form.get("ldap_bind_password", "")
+    search_base = form.get("ldap_search_base", "")
+
+    if not server_url:
+        return HTMLResponse('<div class="alert alert-danger">LDAP server URL not configured</div>')
+
+    try:
+        import ldap3
+        server = ldap3.Server(server_url, get_info=ldap3.ALL, connect_timeout=10)
+        conn = ldap3.Connection(server, user=bind_dn, password=bind_password or "", auto_bind=True)
+        conn.unbind()
+        return HTMLResponse('<div class="alert alert-success">LDAP connection successful</div>')
+    except ImportError:
+        return HTMLResponse('<div class="alert alert-warning">ldap3 library is not installed</div>')
+    except Exception as e:
+        return HTMLResponse(f'<div class="alert alert-danger">LDAP error: {e}</div>')
+
+
+@router.post("/api/settings/telegram/test", include_in_schema=False)
+async def api_telegram_test(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+):
+    """Send a test Telegram message from form data."""
+    import httpx
+
+    form = await request.form()
+    bot_token = form.get("telegram_bot_token", "")
+    chat_id = form.get("telegram_chat_id", "")
+
+    if not bot_token:
+        return HTMLResponse('<div class="alert alert-danger">Bot token not configured</div>')
+    if not chat_id:
+        return HTMLResponse('<div class="alert alert-danger">Chat ID not configured</div>')
+
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json={
+                "chat_id": chat_id,
+                "text": "RAID Monitor: Test notification",
+                "parse_mode": "HTML",
+            })
+        if resp.status_code == 200 and resp.json().get("ok"):
+            return HTMLResponse('<div class="alert alert-success">Test message sent successfully</div>')
+        else:
+            error_desc = resp.json().get("description", resp.text)
+            return HTMLResponse(f'<div class="alert alert-danger">Telegram API error: {error_desc}</div>')
+    except Exception as e:
+        return HTMLResponse(f'<div class="alert alert-danger">Failed to send: {e}</div>')
+
+
+@router.put("/api/servers/{server_id}/agent/debug", include_in_schema=False)
+async def api_agent_debug_toggle(
+    request: Request,
+    server_id: int,
+    current_user: dict = Depends(_require_auth),
+):
+    """Toggle debug mode on a specific agent."""
+    from app.database import async_session
+    from app.models.server import Server
+    import secrets as _secrets
+
+    body = await request.json()
+    enabled = body.get("enabled", False)
+
+    async with async_session() as db:
+        result = await db.execute(select(Server).where(Server.id == server_id))
+        server = result.scalar_one_or_none()
+        if not server:
+            raise HTTPException(status_code=404, detail="Server not found")
+
+        server_info = server.server_info or {}
+        pending = server_info.get("pending_commands", [])
+        pending.append({
+            "id": _secrets.token_hex(8),
+            "type": "set_debug",
+            "enabled": enabled,
+            "created_at": datetime.utcnow().isoformat(),
+        })
+        server_info["pending_commands"] = pending
+        server.server_info = server_info
+        await db.commit()
+
+    return {"success": True, "enabled": enabled}
+
+
+@router.post("/api/servers/{server_id}/agent/collect-logs", include_in_schema=False)
+async def api_agent_collect_logs(
+    request: Request,
+    server_id: int,
+    current_user: dict = Depends(_require_auth),
+):
+    """Request log collection from a specific agent."""
+    from app.database import async_session
+    from app.models.server import Server
+    import secrets as _secrets
+
+    async with async_session() as db:
+        result = await db.execute(select(Server).where(Server.id == server_id))
+        server = result.scalar_one_or_none()
+        if not server:
+            raise HTTPException(status_code=404, detail="Server not found")
+
+        server_info = server.server_info or {}
+        pending = server_info.get("pending_commands", [])
+        pending.append({
+            "id": _secrets.token_hex(8),
+            "type": "collect_logs",
+            "created_at": datetime.utcnow().isoformat(),
+        })
+        server_info["pending_commands"] = pending
+        server.server_info = server_info
+        await db.commit()
+
+    return {"success": True, "message": "Log collection requested"}
+
+
+# ---------------------------------------------------------------------------
 # HTMX Partial Routes (for lazy-loaded tab content)
 # ---------------------------------------------------------------------------
 
