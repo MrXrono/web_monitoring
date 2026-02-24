@@ -581,40 +581,132 @@ async def dashboard_page(
 @router.get("/servers/{server_id}", response_class=HTMLResponse, include_in_schema=False)
 async def server_detail_page(
     request: Request,
-    server_id: int,
+    server_id: str,
     lang: Optional[str] = None,
     current_user: dict = Depends(_require_auth),
 ):
     """Render server detail page."""
-    # Stub server data. In production, fetch from database.
+    from app.database import async_session
+    from app.models.server import Server
+    from app.models.controller import Controller
+    from app.models.virtual_drive import VirtualDrive
+    from app.models.physical_drive import PhysicalDrive
+    from app.models.bbu import BbuUnit
+    from sqlalchemy.orm import selectinload
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(Server).where(Server.id == server_id).options(
+                selectinload(Server.controllers).selectinload(Controller.virtual_drives),
+                selectinload(Server.controllers).selectinload(Controller.physical_drives),
+                selectinload(Server.controllers).selectinload(Controller.bbu),
+            )
+        )
+        srv = result.unique().scalar_one_or_none()
+        if not srv:
+            raise HTTPException(status_code=404, detail="Server not found")
+
+    vd_total = vd_ok = pd_total = pd_ok = 0
+    controllers_list = []
+    all_vds = []
+    all_pds = []
+    for ctrl in (srv.controllers or []):
+        for vd in (ctrl.virtual_drives or []):
+            vd_total += 1
+            if vd.state and vd.state.lower() in ("optimal", "optl"):
+                vd_ok += 1
+            all_vds.append(vd)
+        for pd in (ctrl.physical_drives or []):
+            pd_total += 1
+            if pd.state and pd.state.lower() in ("online", "onln", "ugood", "jbod", "ghs", "dhs"):
+                pd_ok += 1
+            all_pds.append(pd)
+        bbu_info = None
+        if ctrl.bbu:
+            bbu_info = {
+                "status": ctrl.bbu.state or "N/A",
+                "type": ctrl.bbu.bbu_type or "N/A",
+                "temperature": ctrl.bbu.temperature,
+                "charge": ctrl.bbu.remaining_capacity or "N/A",
+            }
+        controllers_list.append({
+            "id": ctrl.controller_id,
+            "model": ctrl.model,
+            "serial": ctrl.serial_number,
+            "firmware": ctrl.firmware_version,
+            "status": ctrl.status,
+            "temperature": ctrl.roc_temperature,
+            "rebuild_rate": ctrl.rebuild_rate,
+            "patrol_read": ctrl.patrol_read_status,
+            "cc_status": ctrl.cc_status,
+            "alarm": ctrl.alarm_status,
+            "memory_size": ctrl.memory_size,
+            "memory_correctable_errors": ctrl.memory_correctable_errors or 0,
+            "memory_uncorrectable_errors": ctrl.memory_uncorrectable_errors or 0,
+            "bbu": bbu_info,
+        })
+
+    uptime_str = "N/A"
+    if srv.uptime_seconds:
+        days = srv.uptime_seconds // 86400
+        hours = (srv.uptime_seconds % 86400) // 3600
+        uptime_str = f"{days}d {hours}h"
+
+    ram_str = f"{srv.ram_total_gb:.0f} GB" if srv.ram_total_gb else "N/A"
+
     server = {
-        "id": server_id,
-        "hostname": "server-" + str(server_id),
-        "ip": "10.0.0." + str(server_id),
-        "status": "online",
-        "os_name": "CentOS",
-        "os_version": "7.9",
-        "kernel": "3.10.0-1160.el7.x86_64",
-        "cpu": "Intel Xeon E5-2680 v4",
-        "ram": "64 GB",
-        "uptime": "45 days",
-        "agent_version": "1.0.0",
-        "last_seen": datetime.utcnow().isoformat(),
-        "last_seen_display": "just now",
-        "controllers_count": 1,
-        "vd_ok": 2,
-        "vd_total": 2,
-        "pd_ok": 6,
-        "pd_total": 6,
+        "id": str(srv.id),
+        "hostname": srv.hostname,
+        "ip": srv.ip_address,
+        "status": srv.status or "unknown",
+        "os_name": srv.os_name,
+        "os_version": srv.os_version,
+        "kernel": srv.kernel_version,
+        "cpu": srv.cpu_model or "N/A",
+        "ram": ram_str,
+        "uptime": uptime_str,
+        "agent_version": srv.agent_version,
+        "last_seen": srv.last_seen.isoformat() if srv.last_seen else "",
+        "last_seen_display": srv.last_seen.strftime("%d.%m %H:%M") if srv.last_seen else "N/A",
+        "controllers_count": len(srv.controllers or []),
+        "vd_ok": vd_ok,
+        "vd_total": vd_total,
+        "pd_ok": pd_ok,
+        "pd_total": pd_total,
         "active_alerts": 0,
         "recent_events": [],
     }
+
+    # Build VD list for template
+    virtual_drives = []
+    for vd in all_vds:
+        virtual_drives.append({
+            "dg": vd.dg_id, "vd": vd.vd_id, "name": vd.name,
+            "raid_type": vd.raid_type, "state": vd.state, "size": vd.size,
+            "cache": vd.cache_policy, "io_policy": vd.io_policy,
+            "read_policy": vd.read_policy, "drives_count": vd.number_of_drives or 0,
+        })
+
+    # Build PD list for template
+    physical_drives = []
+    for pd in all_pds:
+        physical_drives.append({
+            "eid": pd.enclosure_id, "slot": pd.slot_number, "dg": pd.drive_group,
+            "state": pd.state, "size": pd.size, "model": pd.model,
+            "media_type": pd.media_type, "interface": pd.interface_type,
+            "temperature": pd.temperature, "media_errors": pd.media_error_count,
+            "other_errors": pd.other_error_count, "predictive_failure": pd.predictive_failure,
+            "smart_alert": pd.smart_alert,
+        })
 
     ctx = _base_context(
         request,
         active_page="servers",
         current_user=current_user,
         server=server,
+        controllers=controllers_list,
+        virtual_drives=virtual_drives,
+        physical_drives=physical_drives,
     )
 
     response = templates.TemplateResponse("server_detail.html", ctx)
@@ -1121,7 +1213,7 @@ async def api_telegram_test(
 @router.put("/api/servers/{server_id}/agent/debug", include_in_schema=False)
 async def api_agent_debug_toggle(
     request: Request,
-    server_id: int,
+    server_id: str,
     current_user: dict = Depends(_require_auth),
 ):
     """Toggle debug mode on a specific agent."""
@@ -1156,7 +1248,7 @@ async def api_agent_debug_toggle(
 @router.post("/api/servers/{server_id}/agent/collect-logs", include_in_schema=False)
 async def api_agent_collect_logs(
     request: Request,
-    server_id: int,
+    server_id: str,
     current_user: dict = Depends(_require_auth),
 ):
     """Request log collection from a specific agent."""
@@ -1195,25 +1287,95 @@ async def api_agent_collect_logs(
 )
 async def server_controllers_partial(
     request: Request,
-    server_id: int,
+    server_id: str,
     current_user: dict = Depends(_require_auth),
 ):
     """Return controllers HTML partial for HTMX tab loading."""
+    from app.database import async_session
+    from app.models.controller import Controller
+    from app.models.bbu import BbuUnit
+    from sqlalchemy.orm import selectinload
+
     lang = _get_lang(request)
     _ = _make_gettext(lang)
-    controllers = []
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(Controller)
+            .where(Controller.server_id == server_id)
+            .options(selectinload(Controller.bbu))
+            .order_by(Controller.controller_id)
+        )
+        ctrls = result.scalars().all()
+
+    if not ctrls:
+        return HTMLResponse(
+            f'<div class="text-center py-5 text-muted">'
+            f'<p>{_("No controllers found for this server.")}</p></div>'
+        )
 
     html_parts = []
-    if not controllers:
-        html_parts.append(
-            f'<div class="text-center py-5 text-muted">'
-            f'<p>{_("No controllers found for this server.")}</p>'
-            f'</div>'
+    for ctrl in ctrls:
+        temp = ctrl.roc_temperature or 0
+        temp_badge = "bg-danger" if temp > 80 else ("bg-warning text-dark" if temp > 60 else "bg-success")
+        temp_bar = "bg-danger" if temp > 80 else ("bg-warning" if temp > 60 else "bg-success")
+        status_badge = "bg-success" if ctrl.status and ctrl.status.lower() in ("optimal", "opt") else (
+            "bg-warning text-dark" if ctrl.status and ctrl.status.lower() in ("degraded", "dgrd") else "bg-danger"
         )
-    else:
-        for ctrl in controllers:
-            html_parts.append(f'<div class="card border-0 shadow-sm mb-3">')
-            html_parts.append(f'<div class="card-body"><pre>{ctrl}</pre></div></div>')
+        bbu_html = ""
+        if ctrl.bbu:
+            b = ctrl.bbu
+            bbu_status_badge = "bg-success" if b.state and b.state.lower() in ("optimal", "opt") else "bg-warning text-dark"
+            bbu_html = f'''
+            <div class="card bg-light border mt-3"><div class="card-body p-3">
+              <h6 class="card-title small fw-bold mb-2">BBU / CacheVault</h6>
+              <div class="row g-2">
+                <div class="col-auto"><small class="text-muted">{_("Status")}:</small> <span class="badge {bbu_status_badge}">{b.state or "N/A"}</span></div>
+                <div class="col-auto"><small class="text-muted">{_("Type")}:</small> <strong class="small">{b.bbu_type or "N/A"}</strong></div>
+                <div class="col-auto"><small class="text-muted">{_("Temp")}:</small> <strong class="small">{b.temperature or "N/A"} C</strong></div>
+                <div class="col-auto"><small class="text-muted">{_("Charge")}:</small> <strong class="small">{b.remaining_capacity or "N/A"}</strong></div>
+              </div>
+            </div></div>'''
+
+        unc_cls = ' text-danger' if (ctrl.memory_uncorrectable_errors or 0) > 0 else ''
+        html_parts.append(f'''
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">{ctrl.model or "Controller"} #{ctrl.controller_id}</h6>
+            <span class="badge {status_badge}">{ctrl.status or "N/A"}</span>
+          </div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <table class="table table-sm table-borderless mb-0">
+                  <tr><td class="text-muted">{_("Serial")}:</td><td class="fw-semibold">{ctrl.serial_number or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("Firmware")}:</td><td class="fw-semibold">{ctrl.firmware_version or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("Rebuild Rate")}:</td><td class="fw-semibold">{ctrl.rebuild_rate or "N/A"}%</td></tr>
+                  <tr><td class="text-muted">{_("Patrol Read")}:</td><td class="fw-semibold">{ctrl.patrol_read_status or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("CC Status")}:</td><td class="fw-semibold">{ctrl.cc_status or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("Alarm")}:</td><td class="fw-semibold">{ctrl.alarm_status or "N/A"}</td></tr>
+                </table>
+              </div>
+              <div class="col-md-6">
+                <div class="mb-3">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted fw-semibold">{_("Temperature")}</small>
+                    <span class="badge {temp_badge}">{temp} C</span>
+                  </div>
+                  <div class="progress" style="height: 8px;">
+                    <div class="progress-bar {temp_bar}" style="width: {min(temp, 100)}%"></div>
+                  </div>
+                </div>
+                <table class="table table-sm table-borderless mb-0">
+                  <tr><td class="text-muted">{_("Memory")}:</td><td class="fw-semibold">{ctrl.memory_size or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("Correctable Errors")}:</td><td class="fw-semibold">{ctrl.memory_correctable_errors or 0}</td></tr>
+                  <tr><td class="text-muted">{_("Uncorrectable Errors")}:</td><td class="fw-semibold{unc_cls}">{ctrl.memory_uncorrectable_errors or 0}</td></tr>
+                </table>
+              </div>
+            </div>
+            {bbu_html}
+          </div>
+        </div>''')
 
     return HTMLResponse(content="\n".join(html_parts))
 
@@ -1225,18 +1387,55 @@ async def server_controllers_partial(
 )
 async def server_vd_partial(
     request: Request,
-    server_id: int,
+    server_id: str,
     current_user: dict = Depends(_require_auth),
 ):
     """Return virtual drives HTML partial for HTMX tab loading."""
+    from app.database import async_session
+    from app.models.controller import Controller
+    from app.models.virtual_drive import VirtualDrive
+
     lang = _get_lang(request)
     _ = _make_gettext(lang)
 
-    html = (
-        f'<div class="text-center py-5 text-muted">'
-        f'<p>{_("No virtual drives found for this server.")}</p>'
-        f'</div>'
-    )
+    async with async_session() as db:
+        result = await db.execute(
+            select(VirtualDrive)
+            .join(Controller, VirtualDrive.controller_id == Controller.id)
+            .where(Controller.server_id == server_id)
+            .order_by(VirtualDrive.dg_id, VirtualDrive.vd_id)
+        )
+        vds = result.scalars().all()
+
+    if not vds:
+        return HTMLResponse(
+            f'<div class="text-center py-5 text-muted">'
+            f'<p>{_("No virtual drives found for this server.")}</p></div>'
+        )
+
+    rows = []
+    for vd in vds:
+        state_cls = {
+            "optl": "bg-success", "optimal": "bg-success",
+            "dgrd": "bg-warning text-dark", "degraded": "bg-warning text-dark",
+            "pdgd": "bg-danger", "ofln": "bg-danger",
+            "rec": "bg-info text-dark",
+        }.get((vd.state or "").lower(), "bg-secondary")
+        rows.append(f'''<tr>
+          <td class="fw-semibold">{vd.dg_id or ""}/{vd.vd_id}</td>
+          <td>{vd.name or ""}</td><td>{vd.raid_type or ""}</td>
+          <td><span class="badge {state_cls}">{vd.state or "N/A"}</span></td>
+          <td class="text-nowrap">{vd.size or "N/A"}</td>
+          <td>{vd.cache_policy or "N/A"}</td><td>{vd.io_policy or "N/A"}</td>
+          <td>{vd.read_policy or "N/A"}</td><td>{vd.number_of_drives or 0}</td>
+        </tr>''')
+
+    html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
+    <thead class="table-light"><tr>
+      <th>VD#</th><th>{_("Name")}</th><th>RAID</th><th>{_("State")}</th>
+      <th>{_("Size")}</th><th>{_("Cache")}</th><th>IO</th><th>{_("Read")}</th><th>{_("Drives")}</th>
+    </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
     return HTMLResponse(content=html)
 
 
@@ -1247,18 +1446,73 @@ async def server_vd_partial(
 )
 async def server_pd_partial(
     request: Request,
-    server_id: int,
+    server_id: str,
     current_user: dict = Depends(_require_auth),
 ):
     """Return physical drives HTML partial for HTMX tab loading."""
+    from app.database import async_session
+    from app.models.controller import Controller
+    from app.models.physical_drive import PhysicalDrive
+
     lang = _get_lang(request)
     _ = _make_gettext(lang)
 
-    html = (
-        f'<div class="text-center py-5 text-muted">'
-        f'<p>{_("No physical drives found for this server.")}</p>'
-        f'</div>'
-    )
+    async with async_session() as db:
+        result = await db.execute(
+            select(PhysicalDrive)
+            .join(Controller, PhysicalDrive.controller_id == Controller.id)
+            .where(Controller.server_id == server_id)
+            .order_by(PhysicalDrive.enclosure_id, PhysicalDrive.slot_number)
+        )
+        pds = result.scalars().all()
+
+    if not pds:
+        return HTMLResponse(
+            f'<div class="text-center py-5 text-muted">'
+            f'<p>{_("No physical drives found for this server.")}</p></div>'
+        )
+
+    rows = []
+    for pd in pds:
+        state_cls = {
+            "onln": "bg-success", "online": "bg-success",
+            "offln": "bg-danger", "ubad": "bg-danger",
+            "rbld": "bg-info text-dark",
+            "ghs": "bg-cyan", "dhs": "bg-cyan",
+        }.get((pd.state or "").lower(), "bg-secondary")
+        temp_cls = "text-danger fw-bold" if (pd.temperature or 0) > 50 else ("text-warning" if (pd.temperature or 0) > 40 else "")
+        med_cls = " text-danger fw-bold" if (pd.media_error_count or 0) > 0 else ""
+        oth_cls = " text-warning fw-bold" if (pd.other_error_count or 0) > 0 else ""
+        pf_cls = " text-danger fw-bold" if (pd.predictive_failure or 0) > 0 else ""
+        smart_icon = ('<span class="text-danger"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">'
+                      '<path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566z'
+                      'M8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg></span>'
+                      if pd.smart_alert else
+                      '<span class="text-success"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">'
+                      '<path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg></span>')
+        temp_str = f"{pd.temperature} C" if pd.temperature is not None else "N/A"
+        rows.append(f'''<tr>
+          <td class="fw-semibold">{pd.enclosure_id}:{pd.slot_number}</td>
+          <td><span class="badge {state_cls}">{pd.state or "N/A"}</span></td>
+          <td>{pd.drive_group if pd.drive_group is not None else ""}</td>
+          <td class="text-nowrap">{pd.size or "N/A"}</td>
+          <td class="small">{pd.model or "N/A"}</td>
+          <td>{pd.media_type or "N/A"}</td><td>{pd.interface_type or "N/A"}</td>
+          <td><span class="{temp_cls}">{temp_str}</span></td>
+          <td class="{med_cls}">{pd.media_error_count or 0}</td>
+          <td class="{oth_cls}">{pd.other_error_count or 0}</td>
+          <td class="{pf_cls}">{pd.predictive_failure or 0}</td>
+          <td>{smart_icon}</td>
+        </tr>''')
+
+    html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
+    <thead class="table-light"><tr>
+      <th>EID:Slot</th><th>{_("State")}</th><th>DG</th><th>{_("Size")}</th>
+      <th>{_("Model")}</th><th>{_("Type")}</th><th>{_("Interface")}</th>
+      <th>{_("Temp")}</th><th title="{_("Media Errors")}">Med Err</th>
+      <th title="{_("Other Errors")}">Oth Err</th><th title="{_("Predictive Failure")}">Pred.Fail</th><th>SMART</th>
+    </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
     return HTMLResponse(content=html)
 
 
@@ -1269,7 +1523,7 @@ async def server_pd_partial(
 )
 async def server_events_partial(
     request: Request,
-    server_id: int,
+    server_id: str,
     severity: Optional[str] = None,
     page: int = Query(1, ge=1),
     current_user: dict = Depends(_require_auth),
@@ -1293,12 +1547,26 @@ async def server_events_partial(
 )
 async def server_agent_partial(
     request: Request,
-    server_id: int,
+    server_id: str,
     current_user: dict = Depends(_require_auth),
 ):
     """Return agent info HTML partial for HTMX tab loading."""
+    from app.database import async_session
+    from app.models.server import Server
+
     lang = _get_lang(request)
     _ = _make_gettext(lang)
+
+    async with async_session() as db:
+        result = await db.execute(select(Server).where(Server.id == server_id))
+        srv = result.scalar_one_or_none()
+
+    if not srv:
+        return HTMLResponse(f'<div class="alert alert-danger">Server not found</div>')
+
+    last_seen_display = srv.last_seen.strftime("%d.%m.%Y %H:%M") if srv.last_seen else "N/A"
+    registered_display = srv.created_at.strftime("%d.%m.%Y %H:%M") if srv.created_at else "N/A"
+    debug_checked = "checked" if srv.debug_mode else ""
 
     html = f"""
     <div class="card border-0 shadow-sm">
@@ -1306,17 +1574,17 @@ async def server_agent_partial(
         <div class="row g-3">
           <div class="col-md-6">
             <table class="table table-sm table-borderless mb-0">
-              <tr><td class="text-muted">{_("Agent Version")}:</td><td class="fw-semibold">1.0.0</td></tr>
-              <tr><td class="text-muted">{_("StorCLI Version")}:</td><td class="fw-semibold">N/A</td></tr>
-              <tr><td class="text-muted">{_("Last Seen")}:</td><td class="fw-semibold">N/A</td></tr>
-              <tr><td class="text-muted">{_("Registered")}:</td><td class="fw-semibold">N/A</td></tr>
+              <tr><td class="text-muted">{_("Agent Version")}:</td><td class="fw-semibold">{srv.agent_version or "N/A"}</td></tr>
+              <tr><td class="text-muted">{_("StorCLI Version")}:</td><td class="fw-semibold">{srv.storcli_version or "N/A"}</td></tr>
+              <tr><td class="text-muted">{_("Last Seen")}:</td><td class="fw-semibold">{last_seen_display}</td></tr>
+              <tr><td class="text-muted">{_("Registered")}:</td><td class="fw-semibold">{registered_display}</td></tr>
             </table>
           </div>
           <div class="col-md-6">
             <div class="mb-3">
               <label class="form-label fw-semibold">{_("Debug Logging")}</label>
               <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="debugToggle"
+                <input class="form-check-input" type="checkbox" id="debugToggle" {debug_checked}
                        hx-put="/api/servers/{server_id}/agent/debug"
                        hx-swap="none"
                        hx-vals='js:{{"enabled": event.target.checked}}'>
@@ -1469,7 +1737,7 @@ async def alerts_rules_partial(
 )
 async def server_pd_smart_partial(
     request: Request,
-    server_id: int,
+    server_id: str,
     drive_id: str,
     current_user: dict = Depends(_require_auth),
 ):
