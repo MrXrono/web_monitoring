@@ -199,11 +199,12 @@ def _collect_controller(
         "bbu": {},
     }
 
-    # Controller info
+    # Controller info — merge into top-level for server schema compatibility
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}", "show", "all", "J"])
         response = _get_response_data(raw)
-        controller_report["info"] = parse_controller(response)
+        info = parse_controller(response)
+        controller_report.update(info)
     except Exception as exc:
         msg = f"Failed to collect controller /c{cx} info: {exc}"
         logger.error(msg)
@@ -281,26 +282,16 @@ def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "model": basics.get("Model", ""),
         "serial_number": basics.get("Serial Number", ""),
-        "controller_status": status.get("Controller Status", ""),
+        "status": status.get("Controller Status", ""),
         "firmware_version": version.get("Firmware Version", ""),
-        "firmware_package": version.get("Firmware Package Build", ""),
         "bios_version": version.get("BIOS Version", ""),
         "driver_version": version.get("Driver Version", ""),
-        "pci_address": basics.get("PCI Address", ""),
-        "sas_address": basics.get("SAS Address", ""),
         "memory_size": hw_cfg.get("On Board Memory Size", ""),
-        "memory_correctable_errors": status.get("Memory Correctable Errors", 0),
-        "memory_uncorrectable_errors": status.get("Memory Uncorrectable Errors", 0),
-        "temperature_controller": _parse_temperature(
+        "roc_temperature": _parse_temperature(
             hw_cfg.get("ROC temperature(Degree Celsius)", "")
         ),
-        "temperature_bbu": _parse_temperature(
-            hw_cfg.get("BBU temperature(Degree Celsius)", "")
-        ),
-        "ecc_bucket_count": status.get("ECC Bucket Count", 0),
-        "bbu_present": hw_cfg.get("BBU", ""),
-        "alarm_state": hw_cfg.get("Alarm", ""),
-        "patrol_read_state": response.get("Patrol Read", {}).get("PR Mode", ""),
+        "alarm_status": hw_cfg.get("Alarm", ""),
+        "patrol_read_status": response.get("Patrol Read", {}).get("PR Mode", ""),
         "rebuild_rate": response.get("Rebuild Rate", {}).get(
             "Rebuild Rate", ""
         ) if isinstance(response.get("Rebuild Rate"), dict) else response.get("Rebuild Rate", ""),
@@ -417,16 +408,16 @@ def _parse_single_vd(
 
     return {
         "vd_id": vd_num,
-        "disk_group": dg,
+        "dg_id": dg,
         "state": str(state),
-        "raid_level": str(raid_type),
+        "raid_type": str(raid_type),
         "size": str(size),
         "name": str(name),
         "access": str(vd_raw.get("Access", "")),
         "cache_policy": str(vd_raw.get("Cache", properties.get("Current Cache Policy", ""))),
         "consistent": str(vd_raw.get("Consist", "")),
         "strip_size": str(properties.get("Strip Size", vd_raw.get("Strip Size", ""))),
-        "num_drives": vd_raw.get("DGs", properties.get("Number of Drives", 0)),
+        "number_of_drives": vd_raw.get("DGs", properties.get("Number of Drives", 0)),
         "os_drive_name": str(properties.get("OS Drive Name", "")),
         "creation_date": str(properties.get("Creation Date", "")),
         "creation_time": str(properties.get("Creation Time", "")),
@@ -541,15 +532,15 @@ def _parse_single_pd(
         serial = pd_raw.get("SN", pd_raw.get("Serial Number", ""))
 
     return {
-        "enclosure": enclosure,
-        "slot": slot,
+        "enclosure_id": enclosure,
+        "slot_number": slot,
         "state": str(state),
         "media_type": str(media_type),
         "interface": str(interface),
         "size": str(size),
         "model": str(model).strip(),
-        "serial_number": str(serial).strip(),
-        "firmware_version": str(firmware).strip(),
+        "serial": str(serial).strip(),
+        "firmware": str(firmware).strip(),
         "manufacturer": str(manufacturer).strip() if manufacturer else "",
         "temperature": temperature,
         "drive_group": _safe_int(pd_raw.get("DG", pd_raw.get("Disk Group", -1))),
