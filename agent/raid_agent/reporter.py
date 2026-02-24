@@ -126,11 +126,11 @@ def register(
     payload = {
         "hostname": hostname,
         "ip_address": ip,
-        "os_name": os_info.get("os_name", ""),
-        "os_version": os_info.get("os_version", ""),
-        "kernel": os_info.get("kernel", ""),
-        "fqdn": os_info.get("fqdn", ""),
-        "agent_version": __version__,
+        "os": {
+            "name": os_info.get("os_name", ""),
+            "version": os_info.get("os_version", ""),
+            "kernel": os_info.get("kernel", ""),
+        },
     }
 
     session = _build_session(ssl_verify=ssl_verify, ca_bundle=ca_bundle)

@@ -34,7 +34,7 @@ from app.schemas.server import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/servers", tags=["servers"])
+router = APIRouter(tags=["servers"])
 
 
 def _parse_uuid(value: str) -> uuid.UUID:

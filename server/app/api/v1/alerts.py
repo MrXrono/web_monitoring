@@ -23,7 +23,7 @@ from app.schemas.alert import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
+router = APIRouter(tags=["alerts"])
 
 
 def _parse_uuid(value: str) -> uuid.UUID:

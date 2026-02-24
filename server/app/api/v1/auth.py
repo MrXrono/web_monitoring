@@ -16,7 +16,7 @@ from app.schemas.auth import LoginRequest, LoginResponse, UserInfo
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
 
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 

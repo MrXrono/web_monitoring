@@ -32,7 +32,7 @@ from app.schemas.agent_report import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
+router = APIRouter(tags=["agent"])
 
 
 @router.post("/register", response_model=AgentRegisterResponse, status_code=status.HTTP_201_CREATED)

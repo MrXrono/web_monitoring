@@ -32,7 +32,7 @@ from app.schemas.settings import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
+router = APIRouter(tags=["settings"])
 
 # Keys whose values must be stored encrypted
 ENCRYPTED_KEYS = {
