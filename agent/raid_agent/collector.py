@@ -200,10 +200,11 @@ def _collect_controller(
     }
 
     # Controller info — merge into top-level for server schema compatibility
+    ctrl_response = {}
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}", "show", "all", "J"])
-        response = _get_response_data(raw)
-        info = parse_controller(response)
+        ctrl_response = _get_response_data(raw)
+        info = parse_controller(ctrl_response)
         controller_report.update(info)
     except Exception as exc:
         msg = f"Failed to collect controller /c{cx} info: {exc}"
@@ -293,7 +294,43 @@ def _collect_controller(
             logger.debug(msg)
             # Not appending to errors - BBU may legitimately not be present
 
+    # Fallback: extract CacheVault from controller show all response
+    if not controller_report["bbu"] and ctrl_response:
+        cv_fallback = _parse_cachevault_from_controller(ctrl_response)
+        if cv_fallback:
+            controller_report["bbu"] = cv_fallback
+            logger.info("Extracted CacheVault info from controller show all for /c%d", cx)
+
     return controller_report
+
+
+def _extract_policy_value(response: Dict[str, Any], policy_name: str) -> Optional[int]:
+    """Extract a numeric policy value from the Policies Table.
+
+    storcli7 stores policies in a list like:
+        [{"Policy": "Rebuild Rate", "Current": "30 %", "Default": "30%"}, ...]
+
+    Args:
+        response: Full controller response data.
+        policy_name: Exact policy name to search for.
+
+    Returns:
+        Integer value, or None if not found.
+    """
+    policies = response.get("Policies", {})
+    if isinstance(policies, dict):
+        # Check "Policies Table" list
+        table = policies.get("Policies Table", [])
+        if isinstance(table, list):
+            for entry in table:
+                if isinstance(entry, dict) and entry.get("Policy") == policy_name:
+                    current = entry.get("Current", "")
+                    return _safe_int(current) or None
+        # Also check direct key under Policies
+        direct = policies.get(policy_name)
+        if direct is not None:
+            return _safe_int(direct) or None
+    return None
 
 
 def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
@@ -313,6 +350,33 @@ def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
     status = response.get("Status", {})
     hw_cfg = response.get("HwCfg", {})
 
+    # Extract rebuild rate from Policies section
+    rebuild_rate = _extract_policy_value(response, "Rebuild Rate")
+    if rebuild_rate is None:
+        # Fallback: top-level "Rebuild Rate" dict or value
+        rb = response.get("Rebuild Rate")
+        if isinstance(rb, dict):
+            rebuild_rate = _safe_int(rb.get("Rebuild Rate"))
+        elif rb is not None and str(rb).lower() != "yes":
+            rebuild_rate = _safe_int(rb)
+
+    # Extract CC rate from Policies section
+    cc_rate = _extract_policy_value(response, "Check Consistency Rate")
+
+    # Extract patrol read status
+    patrol_read = ""
+    pr_data = response.get("Patrol Read", {})
+    if isinstance(pr_data, dict):
+        patrol_read = pr_data.get("PR Mode", pr_data.get("Patrol Read Mode", ""))
+    # Also check Scheduled Tasks
+    sched = response.get("Scheduled Tasks", {})
+    if isinstance(sched, dict):
+        pr_reoccurrence = sched.get("Patrol Read Reoccurrence", "")
+        if pr_reoccurrence and not patrol_read:
+            patrol_read = f"Every {pr_reoccurrence}"
+        elif pr_reoccurrence and patrol_read:
+            patrol_read = f"{patrol_read} ({pr_reoccurrence})"
+
     return {
         "model": basics.get("Model", ""),
         "serial_number": basics.get("Serial Number", ""),
@@ -321,16 +385,15 @@ def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
         "bios_version": version.get("BIOS Version", ""),
         "driver_version": version.get("Driver Version", ""),
         "memory_size": hw_cfg.get("On Board Memory Size", ""),
-        "roc_temperature": _parse_temperature(
+        "memory_correctable_errors": _safe_int(status.get("Memory Correctable Errors", 0)),
+        "memory_uncorrectable_errors": _safe_int(status.get("Memory Uncorrectable Errors", 0)),
+        "roc_temperature": _safe_int(_parse_temperature(
             hw_cfg.get("ROC temperature(Degree Celsius)", "")
-        ),
+        )) or None,
         "alarm_status": hw_cfg.get("Alarm", ""),
-        "patrol_read_status": response.get("Patrol Read", {}).get("PR Mode", ""),
-        "rebuild_rate": _safe_int(
-            response.get("Rebuild Rate", {}).get("Rebuild Rate", None)
-            if isinstance(response.get("Rebuild Rate"), dict)
-            else response.get("Rebuild Rate")
-        ) or None,
+        "patrol_read_status": patrol_read or None,
+        "rebuild_rate": rebuild_rate if rebuild_rate else None,
+        "cc_status": f"{cc_rate}%" if cc_rate else None,
         "host_interface": hw_cfg.get("Host Interface", ""),
         "product_name": basics.get("Product Name", ""),
         "supported_raid_levels": _parse_supported_raids(response),
@@ -353,6 +416,9 @@ def _parse_temperature(value) -> Optional[float]:
         return float(value)
 
     text = str(value).strip()
+    # Handle format like "19C (66.20 F)" — split on "(" first
+    if "(" in text:
+        text = text.split("(")[0].strip()
     # Remove common suffixes
     for suffix in ("°C", " C", "C", "°", " Degree Celsius"):
         text = text.replace(suffix, "")
@@ -513,7 +579,15 @@ def parse_physical_drives(
     if not pds_raw:
         pds_raw = response.get("Drive Information", [])
 
-    # storcli7 format: individual drive keys like "/c0/e8/s0", "/c0/e8/s1"
+    # storcli7 format: individual drive keys like "Drive /c0/e8/s0", "Drive /c0/e8/s1"
+    # Each key is a list with 1 PD entry; collect ALL of them
+    if not pds_raw:
+        for key, val in response.items():
+            if key.startswith(f"Drive /c{cx}/e") and "/s" in key and isinstance(val, list):
+                if "Detailed Information" not in key:
+                    pds_raw.extend(val)
+
+    # Fallback: keys without "Drive " prefix — "/c0/e8/s0", "/c0/e8/s1"
     if not pds_raw:
         for key, val in response.items():
             if key.startswith(f"/c{cx}/e") and "/s" in key and isinstance(val, list):
@@ -524,13 +598,6 @@ def parse_physical_drives(
         for key, val in response.items():
             if key.startswith("PDs for VD") and isinstance(val, list):
                 pds_raw.extend(val)
-
-    # Also check for "Drive /cx/eall/sall" format
-    if not pds_raw:
-        for key, val in response.items():
-            if key.startswith("Drive /c") and isinstance(val, list):
-                pds_raw = val
-                break
 
     if not isinstance(pds_raw, list):
         pds_raw = []
@@ -595,9 +662,10 @@ def _parse_single_pd(
         state_key = f"Drive /c{cx}/e{enclosure}/s{slot} State"
         state_attrs = detailed.get(state_key, {})
         if isinstance(state_attrs, dict):
-            temperature = _parse_temperature(
+            temp_raw = _parse_temperature(
                 state_attrs.get("Drive Temperature", "")
             )
+            temperature = int(temp_raw) if temp_raw is not None else None
             smart_attributes = {
                 "media_error_count": _safe_int(state_attrs.get("Media Error Count", 0)),
                 "other_error_count": _safe_int(state_attrs.get("Other Error Count", 0)),
@@ -615,23 +683,72 @@ def _parse_single_pd(
     if not serial:
         serial = pd_raw.get("SN", pd_raw.get("Serial Number", ""))
 
-    return {
+    result = {
         "enclosure_id": enclosure,
         "slot_number": slot,
         "state": str(state),
         "media_type": str(media_type),
-        "interface": str(interface),
+        "interface_type": str(interface),
         "size": str(size),
         "model": str(model).strip(),
-        "serial": str(serial).strip(),
-        "firmware": str(firmware).strip(),
+        "serial_number": str(serial).strip(),
+        "firmware_version": str(firmware).strip(),
         "manufacturer": str(manufacturer).strip() if manufacturer else "",
         "temperature": temperature,
         "drive_group": _safe_int(pd_raw.get("DG", pd_raw.get("Disk Group", -1))),
         "span": _safe_int(pd_raw.get("Sp", -1)),
         "device_id": _safe_int(pd_raw.get("DID", pd_raw.get("Device Id", -1))),
         "sector_size": str(pd_raw.get("SeSz", pd_raw.get("Sector Size", ""))),
-        "smart": smart_attributes,
+        "smart_data": smart_attributes,
+    }
+
+    # Flatten SMART attributes to top level for agent_processor compatibility
+    if smart_attributes:
+        result["media_error_count"] = smart_attributes.get("media_error_count", 0)
+        result["other_error_count"] = smart_attributes.get("other_error_count", 0)
+        result["predictive_failure"] = smart_attributes.get("predictive_failure_count", 0)
+        result["shield_counter"] = smart_attributes.get("shield_counter", 0)
+        smart_alert_str = str(smart_attributes.get("smart_alert", "No")).lower()
+        result["smart_alert"] = smart_alert_str not in ("no", "false", "0", "")
+
+    return result
+
+
+def _parse_cachevault_from_controller(response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Extract CacheVault info from controller 'show all' response.
+
+    storcli7 includes Cachevault_Info in the controller show all output:
+        "Cachevault_Info": [{"Model": "CVPM02", "State": "Optimal", "Temp": "23C", ...}]
+
+    This is used as fallback when /cx/bbu and /cx/cv commands both fail.
+    """
+    cv_info = response.get("Cachevault_Info", [])
+    if not cv_info:
+        return None
+
+    if isinstance(cv_info, list) and cv_info:
+        cv_entry = cv_info[0]
+    elif isinstance(cv_info, dict):
+        cv_entry = cv_info
+    else:
+        return None
+
+    if not isinstance(cv_entry, dict):
+        return None
+
+    model = cv_entry.get("Model", "")
+    state = cv_entry.get("State", "")
+    temp = _parse_temperature(cv_entry.get("Temp", ""))
+    mfg_date = cv_entry.get("MfgDate", "")
+
+    return {
+        "type": "CV",
+        "bbu_type": model or "CacheVault",
+        "present": True,
+        "state": str(state),
+        "temperature": int(temp) if temp is not None else None,
+        "manufacture_date": str(mfg_date),
+        "replacement_needed": state.lower() not in ("optimal", "opt", "ready", ""),
     }
 
 
