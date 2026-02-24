@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # pip supports SOCKS5 proxy via build args
 ARG ALL_PROXY=""
+RUN pip install --no-cache-dir pysocks
 COPY requirements.txt .
 RUN ALL_PROXY=${ALL_PROXY} \
     http_proxy=${ALL_PROXY} \
