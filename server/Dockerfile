@@ -3,8 +3,11 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # apt-get runs WITHOUT proxy (SOCKS5 not supported by apt)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc curl && \
+# Docker pre-defined args (HTTP_PROXY etc.) are auto-injected — must unset explicitly
+RUN http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" all_proxy="" \
+    apt-get update && \
+    http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" all_proxy="" \
+    apt-get install -y --no-install-recommends libpq-dev gcc curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Install pysocks without proxy (needed for SOCKS5 proxy support in pip)
