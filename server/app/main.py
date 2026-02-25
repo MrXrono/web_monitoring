@@ -268,6 +268,20 @@ async def register_prebuilt_packages():
         return
 
     async with async_session() as db:
+        # Fix: ensure only the latest version is marked as current
+        result = await db.execute(
+            select(AgentPackage).where(AgentPackage.is_current == True)
+        )
+        current_pkgs = result.scalars().all()
+        if len(current_pkgs) > 1:
+            # Sort by version descending, keep only the newest
+            current_pkgs.sort(
+                key=lambda p: tuple(int(x) for x in p.version.split(".") if x.isdigit()),
+                reverse=True,
+            )
+            for p in current_pkgs[1:]:
+                p.is_current = False
+
         for rpm_file in pkg_dir.glob("*.rpm"):
             # Check if already registered
             result = await db.execute(
@@ -287,6 +301,11 @@ async def register_prebuilt_packages():
             )
             if result.scalar_one_or_none():
                 continue
+
+            # Unmark all existing packages as non-current
+            all_pkgs = await db.execute(select(AgentPackage))
+            for p in all_pkgs.scalars().all():
+                p.is_current = False
 
             pkg = AgentPackage(
                 version=version,
