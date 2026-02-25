@@ -1240,7 +1240,7 @@ async def download_agent_package(
     package_id: str,
     current_user: dict = Depends(_require_auth),
 ):
-    """Download an agent RPM package."""
+    """Download an agent RPM package by ID (web UI, requires auth)."""
     from app.database import async_session
     from app.models.agent_package import AgentPackage
     from fastapi.responses import FileResponse
@@ -1255,6 +1255,54 @@ async def download_agent_package(
             filename=pkg.filename,
             media_type="application/x-rpm",
         )
+
+
+@router.get(
+    "/api/v1/agent/package/latest",
+    include_in_schema=False,
+)
+async def download_agent_package_latest():
+    """Download the current (latest) agent RPM package. No auth required — used by update scripts on agents."""
+    from app.database import async_session
+    from app.models.agent_package import AgentPackage
+    from fastapi.responses import FileResponse
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(AgentPackage).where(AgentPackage.is_current == True).limit(1)
+        )
+        pkg = result.scalar_one_or_none()
+        if not pkg or not os.path.exists(pkg.file_path):
+            raise HTTPException(status_code=404, detail="No current agent package available")
+        return FileResponse(
+            path=pkg.file_path,
+            filename=pkg.filename,
+            media_type="application/x-rpm",
+        )
+
+
+@router.get(
+    "/api/v1/agent/package/version",
+    include_in_schema=False,
+)
+async def agent_package_version():
+    """Return current agent package version. No auth — used by update scripts."""
+    from app.database import async_session
+    from app.models.agent_package import AgentPackage
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(AgentPackage).where(AgentPackage.is_current == True).limit(1)
+        )
+        pkg = result.scalar_one_or_none()
+        if not pkg:
+            return {"version": None, "filename": None}
+        return {
+            "version": pkg.version,
+            "filename": pkg.filename,
+            "sha256": pkg.file_hash_sha256,
+            "size": pkg.file_size,
+        }
 
 
 # ---------------------------------------------------------------------------
