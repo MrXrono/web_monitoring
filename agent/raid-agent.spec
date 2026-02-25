@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.0
+%define version     1.0.1
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -206,6 +206,11 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.1-1
+- Fix: PD interface fallback from detailed attrs and speed inference
+- Fix: immediate log level switching on debug command from server
+- Agent version now reported to server for display in web UI
+
 * Mon Feb 24 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.0-1
 - Initial release
 - storcli64 data collection for MegaRAID controllers
