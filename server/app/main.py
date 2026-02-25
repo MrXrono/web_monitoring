@@ -200,6 +200,41 @@ async def seed_default_settings():
         await db.commit()
 
 
+async def migrate_add_columns():
+    """Add new columns to existing tables (create_all doesn't ALTER existing tables)."""
+    _columns = [
+        # controllers
+        ("controllers", "host_interface", "VARCHAR(32)"),
+        ("controllers", "product_name", "VARCHAR(256)"),
+        ("controllers", "supported_raid_levels", "JSONB"),
+        ("controllers", "next_cc_launch", "VARCHAR(64)"),
+        ("controllers", "next_pr_launch", "VARCHAR(64)"),
+        ("controllers", "next_battery_learn", "VARCHAR(64)"),
+        ("controllers", "ecc_bucket_count", "INTEGER DEFAULT 0"),
+        ("controllers", "firmware_package_build", "VARCHAR(64)"),
+        ("controllers", "driver_name", "VARCHAR(64)"),
+        # virtual_drives
+        ("virtual_drives", "active_operations", "VARCHAR(64)"),
+        ("virtual_drives", "write_cache", "VARCHAR(64)"),
+        ("virtual_drives", "span_depth", "INTEGER"),
+        # physical_drives
+        ("physical_drives", "link_speed", "VARCHAR(32)"),
+        ("physical_drives", "device_speed", "VARCHAR(32)"),
+        ("physical_drives", "physical_sector_size", "VARCHAR(16)"),
+        ("physical_drives", "wwn", "VARCHAR(32)"),
+        # bbu_units
+        ("bbu_units", "capacitance", "VARCHAR(32)"),
+        ("bbu_units", "pack_energy", "VARCHAR(32)"),
+        ("bbu_units", "flash_size", "VARCHAR(32)"),
+    ]
+    async with engine.begin() as conn:
+        for table, column, col_type in _columns:
+            await conn.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}")
+            )
+    logger.info("Database migration: checked %d columns", len(_columns))
+
+
 async def register_prebuilt_packages():
     """Register pre-built agent RPM packages from /app/agent_packages/ into the database."""
     import hashlib
@@ -300,6 +335,9 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # Add new columns to existing tables (create_all doesn't ALTER)
+    await migrate_add_columns()
+
     await create_initial_admin()
     await seed_default_settings()
     await seed_alert_rules()
@@ -361,5 +399,6 @@ if __name__ == "__main__":
         host=settings.APP_HOST,
         port=settings.APP_PORT,
         reload=settings.DEBUG,
+        reload_excludes=["*.log", "logs/*"] if settings.DEBUG else None,
         log_level=settings.LOG_LEVEL.lower(),
     )
