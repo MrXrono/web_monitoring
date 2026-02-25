@@ -454,9 +454,30 @@ def check_for_updates(config):
         logger.exception("Self-update failed")
 
 
-def daemon_loop(config, storcli_path):
-    """Main daemon loop: collect, report, process commands, check updates.
+def _command_poll_loop(config):
+    """Background thread: poll server for commands every 30 seconds.
 
+    This ensures commands (debug toggle, log upload requests) are
+    picked up quickly without waiting for the full collection interval.
+    """
+    poll_interval = 30
+    logger.info("Command poll thread started (interval=%ds)", poll_interval)
+
+    while not _shutdown_event.is_set():
+        if _shutdown_event.wait(timeout=poll_interval):
+            break
+        try:
+            process_commands(config)
+        except Exception:
+            logger.debug("Command poll error", exc_info=True)
+
+    logger.info("Command poll thread exited")
+
+
+def daemon_loop(config, storcli_path):
+    """Main daemon loop: collect, report, check updates.
+
+    Commands are processed in a separate thread every 30s for fast response.
     Runs until _shutdown_event is set (by signal handler or server command).
 
     Args:
@@ -468,6 +489,12 @@ def daemon_loop(config, storcli_path):
         "Starting daemon loop (interval=%ds, storcli=%s)", interval, storcli_path
     )
 
+    # Start background command polling thread
+    cmd_thread = threading.Thread(
+        target=_command_poll_loop, args=(config,), daemon=True, name="cmd-poll"
+    )
+    cmd_thread.start()
+
     while not _shutdown_event.is_set():
         cycle_start = time.monotonic()
 
@@ -477,19 +504,13 @@ def daemon_loop(config, storcli_path):
         except Exception:
             logger.exception("Unhandled error in collection cycle")
 
-        # Process pending commands
-        try:
-            process_commands(config)
-        except Exception:
-            logger.exception("Unhandled error processing commands")
-
         # Check for self-updates
         try:
             check_for_updates(config)
         except Exception:
             logger.exception("Unhandled error checking for updates")
 
-        # Sleep for the remaining interval, checking shutdown every second
+        # Sleep for the remaining interval
         elapsed = time.monotonic() - cycle_start
         remaining = max(0, interval - elapsed)
         logger.debug("Cycle took %.1fs, sleeping %.1fs", elapsed, remaining)
@@ -499,6 +520,7 @@ def daemon_loop(config, storcli_path):
             break
 
     logger.info("Daemon loop exited")
+    cmd_thread.join(timeout=5)
 
 
 def main(argv=None):
