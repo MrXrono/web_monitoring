@@ -1473,7 +1473,7 @@ async def api_debug_upload_logs(
         async with httpx.AsyncClient(timeout=120, verify=False) as client:
             with open(tmp_path, "rb") as f:
                 resp = await client.post(
-                    "https://10.4.0.40/upload",
+                    "https://private-ai.tools/upload",
                     files={"file": (archive_name, f, "application/gzip")},
                 )
 
@@ -1513,7 +1513,7 @@ async def api_debug_upload_server_log(
         async with httpx.AsyncClient(timeout=120, verify=False) as client:
             with open(log_path, "rb") as f:
                 resp = await client.post(
-                    "https://10.4.0.40/upload",
+                    "https://private-ai.tools/upload",
                     files={"file": (upload_name, f, "text/plain")},
                 )
 

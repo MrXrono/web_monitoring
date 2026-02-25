@@ -456,7 +456,7 @@ async def upload_logs_external(
         async with httpx.AsyncClient(timeout=120, verify=False) as client:
             with open(tmp_path, "rb") as f:
                 resp = await client.post(
-                    app_settings.FILE_UPLOAD_URL.replace("private-ai.tools", "10.4.0.40"),
+                    app_settings.FILE_UPLOAD_URL,
                     files={"file": (archive_name, f, "application/gzip")},
                 )
 
