@@ -44,7 +44,7 @@ async def _try_ldap_auth(username: str, password: str, db: AsyncSession) -> User
     ldap_keys = [
         "ldap_enabled", "ldap_server_url", "ldap_bind_dn",
         "ldap_bind_password", "ldap_search_base", "ldap_user_filter",
-        "ldap_display_name_attr", "ldap_email_attr",
+        "ldap_display_name_attr", "ldap_email_attr", "ldap_admin_group",
     ]
     result = await db.execute(
         select(Setting).where(Setting.key.in_(ldap_keys))
@@ -53,6 +53,8 @@ async def _try_ldap_auth(username: str, password: str, db: AsyncSession) -> User
 
     enabled_setting = ldap_settings.get("ldap_enabled")
     if not enabled_setting or enabled_setting.value != "true":
+        logger.info("LDAP auth skipped for '%s': LDAP is disabled (enabled=%s)",
+                     username, enabled_setting.value if enabled_setting else "not set")
         return None
 
     server_url = ldap_settings.get("ldap_server_url")
@@ -62,7 +64,8 @@ async def _try_ldap_auth(username: str, password: str, db: AsyncSession) -> User
     user_filter_tmpl = ldap_settings.get("ldap_user_filter")
 
     if not all([server_url, bind_dn, search_base]):
-        logger.warning("LDAP configuration incomplete")
+        logger.warning("LDAP configuration incomplete: url=%s, bind_dn=%s, search_base=%s",
+                        bool(server_url), bool(bind_dn), bool(search_base))
         return None
 
     server_url_val = server_url.value
@@ -90,35 +93,62 @@ async def _try_ldap_auth(username: str, password: str, db: AsyncSession) -> User
     if ldap_settings.get("ldap_email_attr"):
         email_attr = ldap_settings["ldap_email_attr"].value or email_attr
 
+    admin_group = ""
+    if ldap_settings.get("ldap_admin_group"):
+        admin_group = ldap_settings["ldap_admin_group"].value or ""
+
+    logger.info("LDAP auth attempt: user='%s', server='%s', base='%s', filter='%s'",
+                username, server_url_val, search_base_val, user_filter_val)
+
     try:
         server = ldap3.Server(server_url_val, get_info=ldap3.ALL, connect_timeout=10)
 
         # Bind with service account
         conn = ldap3.Connection(server, user=bind_dn_val, password=bind_pass, auto_bind=True)
+        logger.info("LDAP service bind OK as '%s'", bind_dn_val)
 
         # Search for the user
         conn.search(
             search_base_val,
             user_filter_val,
             search_scope=ldap3.SUBTREE,
-            attributes=[display_name_attr, email_attr],
+            attributes=[display_name_attr, email_attr, "memberOf"],
         )
 
         if not conn.entries:
+            logger.warning("LDAP user '%s' not found with filter '%s' in base '%s'",
+                           username, user_filter_val, search_base_val)
             conn.unbind()
             return None
 
         user_entry = conn.entries[0]
         user_dn = user_entry.entry_dn
+        logger.info("LDAP user found: dn='%s'", user_dn)
 
         # Try to bind as the user to verify password
         user_conn = ldap3.Connection(server, user=user_dn, password=password, auto_bind=True)
         user_conn.unbind()
         conn.unbind()
+        logger.info("LDAP user bind OK for '%s'", username)
 
         # Extract attributes
         display_name = str(getattr(user_entry, display_name_attr, username))
         email = str(getattr(user_entry, email_attr, ""))
+
+        # Check admin group membership
+        is_admin = False
+        if admin_group:
+            member_of = user_entry.entry_attributes_as_dict.get("memberOf", [])
+            admin_group_lower = admin_group.lower()
+            for group_dn in member_of:
+                if admin_group_lower in str(group_dn).lower():
+                    is_admin = True
+                    break
+            logger.info("LDAP admin check: group='%s', memberOf=%s, is_admin=%s",
+                        admin_group, [str(g) for g in member_of], is_admin)
+        else:
+            is_admin = True
+            logger.info("LDAP admin group not configured, granting admin by default")
 
         # Find or create local user record
         result = await db.execute(select(User).where(User.username == username))
@@ -131,24 +161,30 @@ async def _try_ldap_auth(username: str, password: str, db: AsyncSession) -> User
                 email=email if email != "[]" else None,
                 auth_source="ldap",
                 is_active=True,
-                is_admin=False,
+                is_admin=is_admin,
             )
             db.add(user)
+            logger.info("LDAP user '%s' created locally (admin=%s)", username, is_admin)
         else:
             user.display_name = display_name if display_name != "[]" else user.display_name
             user.email = email if email != "[]" else user.email
             user.auth_source = "ldap"
+            user.is_admin = is_admin
+            logger.info("LDAP user '%s' updated locally (admin=%s)", username, is_admin)
 
         user.last_login = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(user)
         return user
 
-    except ldap3.core.exceptions.LDAPBindError:
-        logger.info("LDAP bind failed for user %s", username)
+    except ldap3.core.exceptions.LDAPBindError as exc:
+        logger.warning("LDAP bind failed for user '%s': %s", username, exc)
+        return None
+    except ldap3.core.exceptions.LDAPSocketOpenError as exc:
+        logger.error("LDAP connection failed to '%s': %s", server_url_val, exc)
         return None
     except Exception:
-        logger.exception("LDAP authentication error")
+        logger.exception("LDAP authentication error for user '%s'", username)
         return None
 
 
