@@ -68,6 +68,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "Kernel": "Ядро",
         "Uptime": "Время работы",
         "Last seen": "Последнее подключение",
+        "Last OS Update": "Последнее обновление ОС",
         "Active Alerts": "Активные оповещения",
         "Recent Events": "Последние события",
         "Time": "Время",
@@ -113,6 +114,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "No virtual drives found for this server.": "Виртуальные диски для этого сервера не найдены.",
         "No physical drives found for this server.": "Физические диски для этого сервера не найдены.",
         "No events found for this server.": "События для этого сервера не найдены.",
+        "No events found for this filter.": "Событий с таким фильтром не найдено.",
         "Agent Version": "Версия агента",
         "StorCLI Version": "Версия StorCLI",
         "Registered": "Зарегистрирован",
@@ -670,6 +672,7 @@ async def server_detail_page(
         "ram": ram_str,
         "uptime": uptime_str,
         "agent_version": srv.agent_version,
+        "last_os_update": srv.last_os_update or "N/A",
         "last_seen": srv.last_seen.isoformat() if srv.last_seen else "",
         "last_seen_display": srv.last_seen.strftime("%d.%m %H:%M") if srv.last_seen else "N/A",
         "controllers_count": len(srv.controllers or []),
@@ -1578,13 +1581,7 @@ async def server_events_partial(
             content=f'<div class="alert alert-danger">{_("Error loading events")}: {exc}</div>'
         )
 
-    if not events and total == 0:
-        return HTMLResponse(
-            content=f'<div class="text-center py-5 text-muted">'
-            f'<p>{_("No events found for this server.")}</p></div>'
-        )
-
-    # Severity filter buttons
+    # Severity filter buttons (always shown when events exist for the server)
     sev_options = [
         ("all", _("All"), "btn-outline-secondary"),
         ("info", _("Info"), "btn-outline-info"),
@@ -1603,6 +1600,19 @@ async def server_events_partial(
             f'{sev_label}</button>'
         )
     filter_html += '</div>'
+
+    if not events and total == 0:
+        # If filtering by severity and no results — show filter + empty message
+        if severity and severity.lower() != "all":
+            return HTMLResponse(
+                content=filter_html
+                + f'<div class="text-center py-5 text-muted">'
+                f'<p>{_("No events found for this filter.")}</p></div>'
+            )
+        return HTMLResponse(
+            content=f'<div class="text-center py-5 text-muted">'
+            f'<p>{_("No events found for this server.")}</p></div>'
+        )
 
     # Table rows
     rows = []

@@ -268,6 +268,11 @@ def run_collection_cycle(config, storcli_path):
         "kernel": sys_info.get("kernel", ""),
     }
     report["agent_version"] = __version__
+    report["cpu_model"] = sys_info.get("cpu_model", "")
+    report["cpu_cores"] = sys_info.get("cpu_cores", 0)
+    report["ram_total_gb"] = sys_info.get("ram_total_gb", 0.0)
+    report["uptime_seconds"] = int(sys_info.get("uptime_seconds", 0))
+    report["last_os_update"] = sys_info.get("last_os_update")
     report["collection_timestamp"] = time.time()
 
     # Send report

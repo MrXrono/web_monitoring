@@ -79,6 +79,11 @@
                 <span class="relative-time" data-timestamp="{{ server.last_seen | default('') }}">{{ server.last_seen_display | default('N/A') }}</span>
               </small>
             </div>
+            <div class="col-auto">
+              <small class="text-muted">
+                <strong>{{ _('Last OS Update') }}:</strong> {{ server.last_os_update | default('N/A') }}
+              </small>
+            </div>
           </div>
         </div>
       </div>
