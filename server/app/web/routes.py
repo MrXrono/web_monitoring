@@ -1651,6 +1651,17 @@ async def server_controllers_partial(
         if ctrl.bbu:
             b = ctrl.bbu
             bbu_status_badge = "bg-success" if b.state and b.state.lower() in ("optimal", "opt") else "bg-warning text-dark"
+            bbu_extra = ""
+            if b.capacitance:
+                bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Capacitance")}:</small> <strong class="small">{b.capacitance}</strong></div>'
+            if b.pack_energy:
+                bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Pack Energy")}:</small> <strong class="small">{b.pack_energy}</strong></div>'
+            if b.flash_size:
+                bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Flash")}:</small> <strong class="small">{b.flash_size}</strong></div>'
+            if b.manufacture_date:
+                bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Mfg Date")}:</small> <strong class="small">{b.manufacture_date}</strong></div>'
+            if b.replacement_needed:
+                bbu_extra += f'<div class="col-auto"><span class="badge bg-danger">{_("Replacement Required")}</span></div>'
             bbu_html = f'''
             <div class="card bg-light border mt-3"><div class="card-body p-3">
               <h6 class="card-title small fw-bold mb-2">BBU / CacheVault</h6>
@@ -1659,10 +1670,30 @@ async def server_controllers_partial(
                 <div class="col-auto"><small class="text-muted">{_("Type")}:</small> <strong class="small">{b.bbu_type or "N/A"}</strong></div>
                 <div class="col-auto"><small class="text-muted">{_("Temp")}:</small> <strong class="small">{b.temperature or "N/A"} C</strong></div>
                 <div class="col-auto"><small class="text-muted">{_("Charge")}:</small> <strong class="small">{b.remaining_capacity or "N/A"}</strong></div>
+                {bbu_extra}
               </div>
             </div></div>'''
 
         unc_cls = ' text-danger' if (ctrl.memory_uncorrectable_errors or 0) > 0 else ''
+        ecc_cls = ' text-warning' if (ctrl.ecc_bucket_count or 0) > 0 else ''
+        raid_levels = ", ".join(ctrl.supported_raid_levels) if ctrl.supported_raid_levels else "N/A"
+        driver_str = f"{ctrl.driver_name or ''} {ctrl.driver_version or ''}".strip() or "N/A"
+
+        # Scheduled tasks section
+        sched_parts = []
+        if ctrl.next_cc_launch:
+            sched_parts.append(f'<div class="col-auto"><small class="text-muted">{_("Next CC")}:</small> <strong class="small">{ctrl.next_cc_launch}</strong></div>')
+        if ctrl.next_pr_launch:
+            sched_parts.append(f'<div class="col-auto"><small class="text-muted">{_("Next PR")}:</small> <strong class="small">{ctrl.next_pr_launch}</strong></div>')
+        if ctrl.next_battery_learn:
+            sched_parts.append(f'<div class="col-auto"><small class="text-muted">{_("Next Battery Learn")}:</small> <strong class="small">{ctrl.next_battery_learn}</strong></div>')
+        sched_html = ""
+        if sched_parts:
+            sched_html = f'''<div class="card bg-light border mt-3"><div class="card-body p-3">
+              <h6 class="card-title small fw-bold mb-2">{_("Scheduled Tasks")}</h6>
+              <div class="row g-2">{"".join(sched_parts)}</div>
+            </div></div>'''
+
         html_parts.append(f'''
         <div class="card border-0 shadow-sm mb-3">
           <div class="card-header bg-white d-flex justify-content-between align-items-center">
@@ -1675,10 +1706,11 @@ async def server_controllers_partial(
                 <table class="table table-sm table-borderless mb-0">
                   <tr><td class="text-muted">{_("Serial")}:</td><td class="fw-semibold">{ctrl.serial_number or "N/A"}</td></tr>
                   <tr><td class="text-muted">{_("Firmware")}:</td><td class="fw-semibold">{ctrl.firmware_version or "N/A"}</td></tr>
-                  <tr><td class="text-muted">{_("Rebuild Rate")}:</td><td class="fw-semibold">{ctrl.rebuild_rate or "N/A"}%</td></tr>
-                  <tr><td class="text-muted">{_("Patrol Read")}:</td><td class="fw-semibold">{ctrl.patrol_read_status or "N/A"}</td></tr>
-                  <tr><td class="text-muted">{_("CC Status")}:</td><td class="fw-semibold">{ctrl.cc_status or "N/A"}</td></tr>
-                  <tr><td class="text-muted">{_("Alarm")}:</td><td class="fw-semibold">{ctrl.alarm_status or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("BIOS")}:</td><td class="fw-semibold small">{ctrl.bios_version or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("Driver")}:</td><td class="fw-semibold">{driver_str}</td></tr>
+                  <tr><td class="text-muted">{_("FW Package")}:</td><td class="fw-semibold">{ctrl.firmware_package_build or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("Interface")}:</td><td class="fw-semibold">{ctrl.host_interface or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("RAID Levels")}:</td><td class="fw-semibold small">{raid_levels}</td></tr>
                 </table>
               </div>
               <div class="col-md-6">
@@ -1695,9 +1727,15 @@ async def server_controllers_partial(
                   <tr><td class="text-muted">{_("Memory")}:</td><td class="fw-semibold">{ctrl.memory_size or "N/A"}</td></tr>
                   <tr><td class="text-muted">{_("Correctable Errors")}:</td><td class="fw-semibold">{ctrl.memory_correctable_errors or 0}</td></tr>
                   <tr><td class="text-muted">{_("Uncorrectable Errors")}:</td><td class="fw-semibold{unc_cls}">{ctrl.memory_uncorrectable_errors or 0}</td></tr>
+                  <tr><td class="text-muted">{_("ECC Bucket Count")}:</td><td class="fw-semibold{ecc_cls}">{ctrl.ecc_bucket_count or 0}</td></tr>
+                  <tr><td class="text-muted">{_("Rebuild Rate")}:</td><td class="fw-semibold">{ctrl.rebuild_rate or "N/A"}%</td></tr>
+                  <tr><td class="text-muted">{_("Patrol Read")}:</td><td class="fw-semibold">{ctrl.patrol_read_status or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("CC Status")}:</td><td class="fw-semibold">{ctrl.cc_status or "N/A"}</td></tr>
+                  <tr><td class="text-muted">{_("Alarm")}:</td><td class="fw-semibold">{ctrl.alarm_status or "N/A"}</td></tr>
                 </table>
               </div>
             </div>
+            {sched_html}
             {bbu_html}
           </div>
         </div>''')
@@ -1746,20 +1784,28 @@ async def server_vd_partial(
             "pdgd": "bg-danger", "ofln": "bg-danger",
             "rec": "bg-info text-dark",
         }.get((vd.state or "").lower(), "bg-secondary")
+        active_ops = vd.active_operations or ""
+        ops_html = (f'<span class="badge bg-info text-dark">{active_ops}</span>'
+                    if active_ops and active_ops.lower() != "none"
+                    else '<span class="text-muted small">None</span>')
         rows.append(f'''<tr>
           <td class="fw-semibold">{vd.dg_id or ""}/{vd.vd_id}</td>
           <td>{vd.name or ""}</td><td>{vd.raid_type or ""}</td>
           <td><span class="badge {state_cls}">{vd.state or "N/A"}</span></td>
           <td class="text-nowrap">{vd.size or "N/A"}</td>
-          <td>{vd.cache_policy or "N/A"}</td><td>{vd.io_policy or "N/A"}</td>
-          <td>{vd.read_policy or "N/A"}</td><td>{vd.number_of_drives or 0}</td>
+          <td>{vd.cache_policy or "N/A"}</td>
+          <td>{vd.write_cache or "N/A"}</td>
+          <td>{vd.number_of_drives or 0}</td>
+          <td>{vd.span_depth or ""}</td>
+          <td>{ops_html}</td>
         </tr>''')
 
     html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
     <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
     <thead class="table-light"><tr>
       <th>VD#</th><th>{_("Name")}</th><th>RAID</th><th>{_("State")}</th>
-      <th>{_("Size")}</th><th>{_("Cache")}</th><th>IO</th><th>{_("Read")}</th><th>{_("Drives")}</th>
+      <th>{_("Size")}</th><th>{_("Cache")}</th><th>{_("Write Cache")}</th><th>{_("Drives")}</th>
+      <th>{_("Spans")}</th><th>{_("Active Ops")}</th>
     </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
     return HTMLResponse(content=html)
 
@@ -1816,13 +1862,30 @@ async def server_pd_partial(
                       '<span class="text-success"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">'
                       '<path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg></span>')
         temp_str = f"{pd.temperature} C" if pd.temperature is not None else "N/A"
-        rows.append(f'''<tr>
+        # Tooltip with WWN, Serial, Firmware, Physical Sector Size
+        tooltip_parts = []
+        if pd.wwn:
+            tooltip_parts.append(f"WWN: {pd.wwn}")
+        if pd.serial_number:
+            tooltip_parts.append(f"S/N: {pd.serial_number}")
+        if pd.firmware_version:
+            tooltip_parts.append(f"FW: {pd.firmware_version}")
+        if pd.physical_sector_size:
+            tooltip_parts.append(f"Phys Sector: {pd.physical_sector_size}")
+        row_title = "  ".join(tooltip_parts)
+        speed_tooltip = f'{_("Link")}: {pd.link_speed or "N/A"} / {_("Device")}: {pd.device_speed or "N/A"}'
+        rows.append(f'''<tr title="{row_title}" data-bs-toggle="tooltip" data-bs-placement="top"
+              style="cursor: pointer;"
+              hx-get="/servers/{server_id}/physical-drives/{pd.enclosure_id}:{pd.slot_number}/smart"
+              hx-target="#smart-modal-body" hx-swap="innerHTML"
+              data-bs-target="#smartModal">
           <td class="fw-semibold">{pd.enclosure_id}:{pd.slot_number}</td>
           <td><span class="badge {state_cls}">{pd.state or "N/A"}</span></td>
           <td>{pd.drive_group if pd.drive_group is not None else ""}</td>
           <td class="text-nowrap">{pd.size or "N/A"}</td>
           <td class="small">{pd.model or "N/A"}</td>
           <td>{pd.media_type or "N/A"}</td><td>{pd.interface_type or "N/A"}</td>
+          <td class="small text-nowrap" title="{speed_tooltip}">{pd.link_speed or ""}</td>
           <td><span class="{temp_cls}">{temp_str}</span></td>
           <td class="{med_cls}">{pd.media_error_count or 0}</td>
           <td class="{oth_cls}">{pd.other_error_count or 0}</td>
@@ -1834,7 +1897,7 @@ async def server_pd_partial(
     <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
     <thead class="table-light"><tr>
       <th>EID:Slot</th><th>{_("State")}</th><th>DG</th><th>{_("Size")}</th>
-      <th>{_("Model")}</th><th>{_("Type")}</th><th>{_("Interface")}</th>
+      <th>{_("Model")}</th><th>{_("Type")}</th><th>{_("Interface")}</th><th>{_("Speed")}</th>
       <th>{_("Temp")}</th><th title="{_("Media Errors")}">Med Err</th>
       <th title="{_("Other Errors")}">Oth Err</th><th title="{_("Predictive Failure")}">Pred.Fail</th><th>SMART</th>
     </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''

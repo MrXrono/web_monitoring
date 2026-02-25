@@ -167,6 +167,15 @@ async def receive_report(
         controller.patrol_read_status = ctrl_report.patrol_read_status
         controller.cc_status = ctrl_report.cc_status
         controller.alarm_status = ctrl_report.alarm_status
+        controller.host_interface = ctrl_report.host_interface
+        controller.product_name = ctrl_report.product_name
+        controller.supported_raid_levels = ctrl_report.supported_raid_levels
+        controller.next_cc_launch = ctrl_report.next_cc_launch
+        controller.next_pr_launch = ctrl_report.next_pr_launch
+        controller.next_battery_learn = ctrl_report.next_battery_learn
+        controller.ecc_bucket_count = ctrl_report.ecc_bucket_count or 0
+        controller.firmware_package_build = ctrl_report.firmware_package_build
+        controller.driver_name = ctrl_report.driver_name
         controller.raw_data = ctrl_report.raw
 
         # Process BBU
@@ -186,6 +195,10 @@ async def receive_report(
             bbu.replacement_needed = ctrl_report.bbu.replacement_needed or False
             bbu.learn_cycle_status = ctrl_report.bbu.learn_cycle_status
             bbu.remaining_capacity = ctrl_report.bbu.remaining_capacity
+            bbu.capacitance = ctrl_report.bbu.capacitance
+            bbu.pack_energy = ctrl_report.bbu.pack_energy
+            bbu.manufacture_date = ctrl_report.bbu.manufacture_date
+            bbu.flash_size = ctrl_report.bbu.flash_size
             bbu.raw_data = ctrl_report.bbu.raw
 
         # Process Virtual Drives
@@ -222,6 +235,9 @@ async def receive_report(
             vd.disk_cache_policy = vd_report.disk_cache
             vd.consistent = vd_report.consistent
             vd.access = vd_report.access
+            vd.active_operations = vd_report.active_operations
+            vd.write_cache = vd_report.write_cache
+            vd.span_depth = vd_report.span_depth
             vd.raw_data = vd_report.raw
 
         # Remove VDs that no longer exist on the controller
@@ -275,6 +291,10 @@ async def receive_report(
             pd.other_error_count = pd_report.other_error_count or 0
             pd.predictive_failure = pd_report.predictive_failure or 0
             pd.smart_alert = pd_report.smart_alert or False
+            pd.link_speed = pd_report.link_speed
+            pd.device_speed = pd_report.device_speed
+            pd.physical_sector_size = pd_report.physical_sector_size
+            pd.wwn = pd_report.wwn
             pd.smart_data = pd_report.smart
             pd.pd_raw_data = pd_report.raw
 
