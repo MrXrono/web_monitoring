@@ -742,6 +742,9 @@ def _parse_single_pd(
             device_speed = device_attrs.get("Device Speed", "")
             physical_sector_size = device_attrs.get("Physical Sector Size", "")
             wwn = device_attrs.get("WWN", "")
+            # Fallback interface from detailed attributes
+            if not interface:
+                interface = device_attrs.get("Interface", device_attrs.get("Intf", ""))
         else:
             manufacturer = ""
             link_speed = ""
@@ -773,6 +776,16 @@ def _parse_single_pd(
     # Fallback for serial from PD list entry
     if not serial:
         serial = pd_raw.get("SN", pd_raw.get("Serial Number", ""))
+
+    # Infer interface type from link speed if still unknown
+    if not interface and link_speed:
+        speed_lower = link_speed.lower()
+        if "12.0" in speed_lower or "6.0" in speed_lower or "3.0" in speed_lower:
+            interface = "SAS"
+        elif "sata" in speed_lower:
+            interface = "SATA"
+        elif "nvme" in speed_lower or "pcie" in speed_lower:
+            interface = "NVMe"
 
     result = {
         "enclosure_id": enclosure,
