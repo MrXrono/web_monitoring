@@ -7,6 +7,7 @@ events, and battery/capacitor status.
 
 import json
 import logging
+import re
 import subprocess
 import time
 from typing import Any, Dict, List, Optional
