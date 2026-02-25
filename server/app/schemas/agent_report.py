@@ -30,6 +30,7 @@ class BbuReport(BaseModel):
     remaining_capacity: Optional[str] = None
     capacitance: Optional[str] = None
     pack_energy: Optional[str] = None
+    design_capacity: Optional[str] = None
     manufacture_date: Optional[str] = None
     flash_size: Optional[str] = None
     raw: Optional[dict] = None

@@ -1213,6 +1213,7 @@ def parse_bbu(response: Dict[str, Any], source: str = "bbu") -> Dict[str, Any]:
 
         if cv_design:
             result["manufacture_date"] = str(cv_design.get("Date of Manufacture", ""))
+            result["design_capacity"] = str(cv_design.get("Design Capacity", ""))
             result["flash_size"] = str(cv_design.get("CacheVault Flash Size", ""))
 
     return result

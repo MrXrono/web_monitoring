@@ -699,13 +699,15 @@ async def server_detail_page(
             all_pds.append(pd)
         bbu_info = None
         if ctrl.bbu:
+            is_cv = ctrl.bbu.bbu_type and ctrl.bbu.bbu_type.upper().startswith("CVPM")
             bbu_info = {
                 "status": ctrl.bbu.state or "N/A",
                 "type": ctrl.bbu.bbu_type or "N/A",
                 "temperature": ctrl.bbu.temperature,
-                "charge": ctrl.bbu.remaining_capacity or "N/A",
+                "charge": (ctrl.bbu.capacitance or "N/A") if is_cv else (ctrl.bbu.remaining_capacity or "N/A"),
                 "capacitance": ctrl.bbu.capacitance or "",
                 "pack_energy": ctrl.bbu.pack_energy or "",
+                "design_capacity": ctrl.bbu.design_capacity or "",
                 "manufacture_date": ctrl.bbu.manufacture_date or "",
                 "flash_size": ctrl.bbu.flash_size or "",
                 "replacement_needed": ctrl.bbu.replacement_needed,
@@ -1712,11 +1714,20 @@ async def server_controllers_partial(
         if ctrl.bbu:
             b = ctrl.bbu
             bbu_status_badge = "bg-success" if b.state and b.state.lower() in ("optimal", "opt") else "bg-warning text-dark"
+            # Determine charge display: for CacheVault use capacitance, for BBU use remaining_capacity
+            is_cachevault = b.bbu_type and b.bbu_type.upper().startswith("CVPM")
+            if is_cachevault:
+                charge_display = b.capacitance or "N/A"
+            else:
+                charge_display = b.remaining_capacity or "N/A"
             bbu_extra = ""
-            if b.capacitance:
+            if is_cachevault and b.pack_energy:
+                energy_str = b.pack_energy
+                if b.design_capacity:
+                    energy_str += f" / {b.design_capacity}"
+                bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Energy")}:</small> <strong class="small">{energy_str}</strong></div>'
+            elif not is_cachevault and b.capacitance:
                 bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Capacitance")}:</small> <strong class="small">{b.capacitance}</strong></div>'
-            if b.pack_energy:
-                bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Pack Energy")}:</small> <strong class="small">{b.pack_energy}</strong></div>'
             if b.flash_size:
                 bbu_extra += f'<div class="col-auto"><small class="text-muted">{_("Flash")}:</small> <strong class="small">{b.flash_size}</strong></div>'
             if b.manufacture_date:
@@ -1730,7 +1741,7 @@ async def server_controllers_partial(
                 <div class="col-auto"><small class="text-muted">{_("Status")}:</small> <span class="badge {bbu_status_badge}">{b.state or "N/A"}</span></div>
                 <div class="col-auto"><small class="text-muted">{_("Type")}:</small> <strong class="small">{b.bbu_type or "N/A"}</strong></div>
                 <div class="col-auto"><small class="text-muted">{_("Temp")}:</small> <strong class="small">{b.temperature or "N/A"} C</strong></div>
-                <div class="col-auto"><small class="text-muted">{_("Charge")}:</small> <strong class="small">{b.remaining_capacity or "N/A"}</strong></div>
+                <div class="col-auto"><small class="text-muted">{_("Charge")}:</small> <strong class="small">{charge_display}</strong></div>
                 {bbu_extra}
               </div>
             </div></div>'''

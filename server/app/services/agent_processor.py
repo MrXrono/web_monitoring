@@ -232,6 +232,7 @@ async def _upsert_bbu(
     bbu.replacement_needed = bool(bbu_data.get("replacement_needed", False))
     bbu.capacitance = bbu_data.get("capacitance")
     bbu.pack_energy = bbu_data.get("pack_energy")
+    bbu.design_capacity = bbu_data.get("design_capacity")
     bbu.flash_size = bbu_data.get("flash_size")
     bbu.raw_data = bbu_data.get("raw_data")
 

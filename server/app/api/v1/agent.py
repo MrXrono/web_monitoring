@@ -197,6 +197,7 @@ async def receive_report(
             bbu.remaining_capacity = ctrl_report.bbu.remaining_capacity
             bbu.capacitance = ctrl_report.bbu.capacitance
             bbu.pack_energy = ctrl_report.bbu.pack_energy
+            bbu.design_capacity = ctrl_report.bbu.design_capacity
             bbu.manufacture_date = ctrl_report.bbu.manufacture_date
             bbu.flash_size = ctrl_report.bbu.flash_size
             bbu.raw_data = ctrl_report.bbu.raw

@@ -441,9 +441,13 @@ document.addEventListener('DOMContentLoaded', function() {
           <div class="col-auto"><small class="text-muted">{{ _('Status') }}:</small> <span class="badge {% if ctrl.bbu.status == 'Optimal' or ctrl.bbu.status == 'Opt' %}bg-success{% elif ctrl.bbu.replacement_needed %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ ctrl.bbu.status | default('N/A') }}</span></div>
           <div class="col-auto"><small class="text-muted">{{ _('Type') }}:</small> <strong class="small">{{ ctrl.bbu.type | default('N/A') }}</strong></div>
           <div class="col-auto"><small class="text-muted">{{ _('Temp') }}:</small> <strong class="small">{{ ctrl.bbu.temperature | default('N/A') }} C</strong></div>
+          {% if ctrl.bbu.type and ctrl.bbu.type.upper().startswith('CVPM') %}
+          <div class="col-auto"><small class="text-muted">{{ _('Charge') }}:</small> <strong class="small">{{ ctrl.bbu.capacitance | default('N/A') }}</strong></div>
+          {% if ctrl.bbu.pack_energy %}<div class="col-auto"><small class="text-muted">{{ _('Energy') }}:</small> <strong class="small">{{ ctrl.bbu.pack_energy }}{% if ctrl.bbu.design_capacity %} / {{ ctrl.bbu.design_capacity }}{% endif %}</strong></div>{% endif %}
+          {% else %}
           <div class="col-auto"><small class="text-muted">{{ _('Charge') }}:</small> <strong class="small">{{ ctrl.bbu.charge | default('N/A') }}</strong></div>
           {% if ctrl.bbu.capacitance %}<div class="col-auto"><small class="text-muted">{{ _('Capacitance') }}:</small> <strong class="small">{{ ctrl.bbu.capacitance }}</strong></div>{% endif %}
-          {% if ctrl.bbu.pack_energy %}<div class="col-auto"><small class="text-muted">{{ _('Pack Energy') }}:</small> <strong class="small">{{ ctrl.bbu.pack_energy }}</strong></div>{% endif %}
+          {% endif %}
           {% if ctrl.bbu.flash_size %}<div class="col-auto"><small class="text-muted">{{ _('Flash') }}:</small> <strong class="small">{{ ctrl.bbu.flash_size }}</strong></div>{% endif %}
           {% if ctrl.bbu.manufacture_date %}<div class="col-auto"><small class="text-muted">{{ _('Mfg Date') }}:</small> <strong class="small">{{ ctrl.bbu.manufacture_date }}</strong></div>{% endif %}
           {% if ctrl.bbu.replacement_needed %}<div class="col-auto"><span class="badge bg-danger">{{ _('Replacement Required') }}</span></div>{% endif %}
