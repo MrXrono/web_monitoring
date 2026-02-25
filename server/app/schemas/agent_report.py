@@ -57,6 +57,8 @@ class VdReport(BaseModel):
 
 
 class PdReport(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     enclosure_id: int
     slot_number: int
     device_id: Optional[int] = None
@@ -64,10 +66,10 @@ class PdReport(BaseModel):
     state: str = "Unknown"
     size: Optional[str] = None
     media_type: Optional[str] = None
-    interface: Optional[str] = None
+    interface: Optional[str] = Field(None, alias="interface_type")
     model: Optional[str] = None
-    serial: Optional[str] = None
-    firmware: Optional[str] = None
+    serial: Optional[str] = Field(None, alias="serial_number")
+    firmware: Optional[str] = Field(None, alias="firmware_version")
     manufacturer: Optional[str] = None
     temperature: Optional[int] = None
     media_error_count: Optional[int] = 0
@@ -78,7 +80,7 @@ class PdReport(BaseModel):
     device_speed: Optional[str] = None
     physical_sector_size: Optional[str] = None
     wwn: Optional[str] = None
-    smart: Optional[dict] = None
+    smart: Optional[dict] = Field(None, alias="smart_data")
     raw: Optional[dict] = None
 
 
