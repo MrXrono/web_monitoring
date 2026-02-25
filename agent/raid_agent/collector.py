@@ -313,6 +313,10 @@ def _collect_controller(
             logger.warning(msg)
             errors.append(msg)
 
+    # Compute approximate timestamps for events that only have
+    # "Seconds since last reboot" (early boot events before clock sync)
+    _resolve_relative_event_times(controller_report["events"])
+
     # Battery / Capacitor
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}/bbu", "show", "all", "J"])
@@ -796,6 +800,50 @@ def _parse_cachevault_from_controller(response: Dict[str, Any]) -> Optional[Dict
     }
 
 
+def _resolve_relative_event_times(events: List[Dict[str, Any]]) -> None:
+    """Compute approximate timestamps for events with only relative time.
+
+    Early boot events from storcli only have "Seconds since last reboot"
+    instead of absolute timestamps. This function computes approximate
+    absolute times using system uptime from /proc/uptime.
+
+    Events with absolute time are left unchanged. The internal
+    _seconds_since_reboot field is removed after processing.
+    """
+    from datetime import datetime, timedelta
+
+    # Check if any events need timestamp resolution
+    need_resolution = [e for e in events if "_seconds_since_reboot" in e]
+    if not need_resolution:
+        return
+
+    # Try to compute boot time from system uptime
+    boot_time = None
+    try:
+        with open("/proc/uptime", "r") as f:
+            uptime_secs = float(f.read().split()[0])
+        boot_time = datetime.now() - timedelta(seconds=uptime_secs)
+    except Exception:
+        logger.debug("Cannot read /proc/uptime for event time resolution")
+
+    # Alternative: find a reference event that has both absolute time and
+    # is close in sequence to relative-time events
+    if boot_time is None:
+        for evt in events:
+            if evt.get("event_time") and "_seconds_since_reboot" not in evt:
+                # Can't compute boot_time without uptime; skip
+                break
+
+    for evt in events:
+        secs = evt.pop("_seconds_since_reboot", None)
+        if secs is not None and not evt.get("event_time") and boot_time is not None:
+            approx_time = boot_time + timedelta(seconds=secs)
+            evt["event_time"] = approx_time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    resolved = sum(1 for e in need_resolution if e.get("event_time"))
+    logger.debug("Resolved %d/%d relative event timestamps", resolved, len(need_resolution))
+
+
 _EVENT_CLASS_MAP = {
     "-1": "progress",
     "0": "info",
@@ -891,15 +939,30 @@ def parse_events_text(text: str) -> List[Dict[str, Any]]:
         if not current:
             continue
 
+        # Collect event data lines first (before field checks) to avoid
+        # misinterpreting "Time:" or "Code:" inside Event Data blocks
+        if in_event_data:
+            if stripped.startswith("====="):
+                continue
+            if not stripped:
+                continue
+            if stripped.startswith("CLI Version") or stripped.startswith("Controller Properties"):
+                in_event_data = False
+                continue
+            event_data_lines.append(stripped)
+            continue
+
         if stripped.startswith("Time:"):
             time_str = stripped.split(":", 1)[1].strip()
             current["event_time"] = _parse_event_time(time_str)
             continue
 
         if stripped.startswith("Seconds since last reboot:"):
-            # No absolute time - use relative marker
-            if "event_time" not in current:
-                current["event_time"] = None
+            secs_str = stripped.split(":", 1)[1].strip()
+            try:
+                current["_seconds_since_reboot"] = int(secs_str)
+            except ValueError:
+                pass
             continue
 
         if stripped.startswith("Code:"):
@@ -925,13 +988,6 @@ def parse_events_text(text: str) -> List[Dict[str, Any]]:
 
         if stripped.startswith("====="):
             continue
-
-        if in_event_data and stripped:
-            # Stop collecting event data if we hit storcli CLI footer
-            if stripped.startswith("CLI Version") or stripped.startswith("Controller Properties"):
-                in_event_data = False
-                continue
-            event_data_lines.append(stripped)
 
     # Save last event
     if current:
@@ -959,6 +1015,9 @@ def _finalize_text_event(
         "event_description": current.get("event_description", ""),
         "event_data": {"text": data_text} if data_text else None,
     }
+    # Preserve relative timestamp for later resolution
+    if "_seconds_since_reboot" in current:
+        event["_seconds_since_reboot"] = current["_seconds_since_reboot"]
     events.append(event)
 
 
