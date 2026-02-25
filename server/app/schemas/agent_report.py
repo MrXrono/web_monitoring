@@ -27,6 +27,7 @@ class BbuReport(BaseModel):
     voltage: Optional[str] = None
     replacement_needed: Optional[bool] = False
     learn_cycle_status: Optional[str] = None
+    remaining_capacity: Optional[str] = None
     raw: Optional[dict] = None
 
 
@@ -90,6 +91,8 @@ class ControllerReport(BaseModel):
     driver_version: Optional[str] = None
     status: Optional[str] = None
     memory_size: Optional[str] = None
+    memory_correctable_errors: Optional[int] = 0
+    memory_uncorrectable_errors: Optional[int] = 0
     roc_temperature: Optional[int] = None
     rebuild_rate: Optional[int] = None
     patrol_read_status: Optional[str] = None

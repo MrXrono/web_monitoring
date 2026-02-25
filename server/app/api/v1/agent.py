@@ -160,6 +160,8 @@ async def receive_report(
         controller.driver_version = ctrl_report.driver_version
         controller.status = ctrl_report.status
         controller.memory_size = ctrl_report.memory_size
+        controller.memory_correctable_errors = ctrl_report.memory_correctable_errors or 0
+        controller.memory_uncorrectable_errors = ctrl_report.memory_uncorrectable_errors or 0
         controller.roc_temperature = ctrl_report.roc_temperature
         controller.rebuild_rate = ctrl_report.rebuild_rate
         controller.patrol_read_status = ctrl_report.patrol_read_status
@@ -183,6 +185,7 @@ async def receive_report(
             bbu.voltage = ctrl_report.bbu.voltage
             bbu.replacement_needed = ctrl_report.bbu.replacement_needed or False
             bbu.learn_cycle_status = ctrl_report.bbu.learn_cycle_status
+            bbu.remaining_capacity = ctrl_report.bbu.remaining_capacity
             bbu.raw_data = ctrl_report.bbu.raw
 
         # Process Virtual Drives

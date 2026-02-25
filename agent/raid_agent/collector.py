@@ -329,12 +329,21 @@ def _collect_controller(
             logger.debug(msg)
             # Not appending to errors - BBU may legitimately not be present
 
-    # Fallback: extract CacheVault from controller show all response
-    if not controller_report["bbu"] and ctrl_response:
+    # Supplement or replace BBU data with CacheVault info from controller show all
+    if ctrl_response:
         cv_fallback = _parse_cachevault_from_controller(ctrl_response)
         if cv_fallback:
-            controller_report["bbu"] = cv_fallback
-            logger.info("Extracted CacheVault info from controller show all for /c%d", cx)
+            bbu_data = controller_report["bbu"]
+            if not bbu_data or not bbu_data.get("state"):
+                # No useful BBU data — use CacheVault info entirely
+                controller_report["bbu"] = cv_fallback
+                logger.info("Using CacheVault info from controller show all for /c%d", cx)
+            else:
+                # Supplement with specific model info if missing
+                if not bbu_data.get("bbu_type") or bbu_data["bbu_type"] in ("BBU", "CV"):
+                    bbu_data["bbu_type"] = cv_fallback.get("bbu_type", bbu_data.get("bbu_type"))
+                if bbu_data.get("temperature") is None and cv_fallback.get("temperature") is not None:
+                    bbu_data["temperature"] = cv_fallback["temperature"]
 
     return controller_report
 
@@ -1001,50 +1010,32 @@ def parse_bbu(response: Dict[str, Any], source: str = "bbu") -> Dict[str, Any]:
         bbu_design = response.get("BBU Design Info", {})
         bbu_firmware = response.get("BBU Firmware Status", {})
 
+        result["bbu_type"] = "BBU"
+
         if isinstance(bbu_status, dict):
+            temp = _parse_temperature(bbu_status.get("Temperature", ""))
+            voltage_mv = _safe_float(bbu_status.get("Voltage", ""))
             result.update({
-                "voltage_mv": _safe_float(bbu_status.get("Voltage", "")),
-                "current_ma": _safe_float(bbu_status.get("Current", "")),
-                "temperature": _parse_temperature(bbu_status.get("Temperature", "")),
-                "battery_state": str(bbu_status.get("Battery State", "")),
-                "charging_status": str(bbu_status.get("Charging Status", "")),
-                "learn_cycle_active": str(bbu_status.get("Learn Cycle Active", "")),
+                "temperature": int(temp) if temp is not None else None,
+                "state": str(bbu_status.get("Battery State", "")),
+                "voltage": f"{voltage_mv} mV" if voltage_mv else None,
+                "learn_cycle_status": str(bbu_status.get("Learn Cycle Active", "")),
             })
 
         if isinstance(bbu_capacity, dict):
-            result.update({
-                "relative_charge_pct": _safe_int(
-                    bbu_capacity.get("Relative State of Charge", 0)
-                ),
-                "absolute_charge_pct": _safe_int(
-                    bbu_capacity.get("Absolute State of charge", 0)
-                ),
-                "remaining_capacity_mah": _safe_int(
-                    bbu_capacity.get("Remaining Capacity", 0)
-                ),
-                "full_charge_capacity_mah": _safe_int(
-                    bbu_capacity.get("Full Charge Capacity", 0)
-                ),
-            })
-
-        if isinstance(bbu_design, dict):
-            result.update({
-                "manufacture_date": str(bbu_design.get("Date of Manufacture", "")),
-                "design_capacity_mah": _safe_int(
-                    bbu_design.get("Design Capacity", 0)
-                ),
-                "cycle_count": _safe_int(bbu_design.get("Cycle Count", 0)),
-            })
+            remaining = _safe_int(bbu_capacity.get("Remaining Capacity", 0))
+            full_charge = _safe_int(bbu_capacity.get("Full Charge Capacity", 0))
+            relative_pct = _safe_int(bbu_capacity.get("Relative State of Charge", 0))
+            if relative_pct:
+                result["remaining_capacity"] = f"{relative_pct}%"
+            elif remaining and full_charge:
+                result["remaining_capacity"] = f"{remaining}/{full_charge} mAh"
+            elif remaining:
+                result["remaining_capacity"] = f"{remaining} mAh"
 
         if isinstance(bbu_firmware, dict):
-            result.update({
-                "replacement_needed": str(
-                    bbu_firmware.get("Battery Replacement required", "No")
-                ),
-                "remaining_capacity_low": str(
-                    bbu_firmware.get("Remaining Capacity Low", "No")
-                ),
-            })
+            repl = str(bbu_firmware.get("Battery Replacement required", "No"))
+            result["replacement_needed"] = repl.lower() in ("yes", "true", "1")
 
     elif source == "cv":
         # CacheVault data parsing
@@ -1053,22 +1044,21 @@ def parse_bbu(response: Dict[str, Any], source: str = "bbu") -> Dict[str, Any]:
             cv_info = cv_info[0]
 
         if isinstance(cv_info, dict):
+            temp = _parse_temperature(cv_info.get("Temp", cv_info.get("Temperature", "")))
+            model = cv_info.get("Model", "")
             result.update({
-                "temperature": _parse_temperature(cv_info.get("Temp", cv_info.get("Temperature", ""))),
+                "bbu_type": model or "CacheVault",
+                "temperature": int(temp) if temp is not None else None,
                 "state": str(cv_info.get("State", "")),
-                "replacement_needed": str(cv_info.get("Replacement required", "No")),
-                "write_through_fail": str(
-                    cv_info.get("Write Through Mode on Drive Failure", "")
-                ),
+                "replacement_needed": str(cv_info.get("Replacement required", "No")).lower() in ("yes", "true", "1"),
             })
 
         # CacheVault firmware info
         cv_firmware = response.get("Firmware_Status", {})
         if isinstance(cv_firmware, dict):
-            result.update({
-                "firmware_version": str(cv_firmware.get("Firmware Version", "")),
-                "health_status": str(cv_firmware.get("Health", "")),
-            })
+            health = str(cv_firmware.get("Health", ""))
+            if health and not result.get("state"):
+                result["state"] = health
 
     return result
 
@@ -1085,12 +1075,12 @@ def _safe_int(value, default: int = 0) -> int:
     """
     if value is None:
         return default
-    if isinstance(value, int):
-        return value
+    if isinstance(value, (int, float)):
+        return int(value)
     try:
-        # Handle strings like "123 MB" by taking the first numeric part
+        # Handle strings like "123 MB" or "60.0" by taking the first numeric part
         text = str(value).strip().split()[0] if str(value).strip() else ""
-        return int(text)
+        return int(float(text))
     except (ValueError, IndexError):
         return default
 
