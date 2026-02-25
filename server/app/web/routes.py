@@ -1652,7 +1652,7 @@ async def api_agent_collect_logs(
         pending = server_info.get("pending_commands", [])
         pending.append({
             "id": _secrets.token_hex(8),
-            "type": "collect_logs",
+            "type": "upload_logs",
             "created_at": datetime.utcnow().isoformat(),
         })
         server_info["pending_commands"] = pending
