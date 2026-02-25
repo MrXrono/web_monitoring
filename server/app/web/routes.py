@@ -996,8 +996,8 @@ async def settings_page(
                     "hostname": srv.hostname,
                     "ip": srv.ip_address,
                     "status": srv.status,
-                    "agent_version": info.get("agent_version", "N/A"),
-                    "debug_enabled": info.get("debug_enabled", False),
+                    "agent_version": srv.agent_version or "N/A",
+                    "debug_enabled": srv.debug_mode if hasattr(srv, 'debug_mode') else info.get("debug_enabled", False),
                 })
             extra["agents"] = agents_list
 
@@ -1435,7 +1435,7 @@ async def api_debug_collect_all(
             pending = server_info.get("pending_commands", [])
             pending.append({
                 "id": cmd_id,
-                "type": "collect_logs",
+                "type": "upload_logs",
                 "created_at": datetime.utcnow().isoformat(),
             })
             server_info["pending_commands"] = pending
