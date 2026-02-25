@@ -318,7 +318,7 @@ def process_commands(config):
             ca_bundle=config.get("ca_bundle", ""),
         )
     except Exception:
-        logger.debug("Failed to fetch commands from server", exc_info=True)
+        logger.warning("Failed to fetch commands from server", exc_info=True)
         return
 
     if not commands:
@@ -469,7 +469,7 @@ def _command_poll_loop(config):
         try:
             process_commands(config)
         except Exception:
-            logger.debug("Command poll error", exc_info=True)
+            logger.warning("Command poll error", exc_info=True)
 
     logger.info("Command poll thread exited")
 

@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.2
+%define version     1.0.3
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -206,6 +206,10 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.3-1
+- Fix: command poll errors now logged at WARNING level (were silently swallowed at DEBUG)
+- Improved diagnostics for server communication failures
+
 * Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.2-1
 - Background command poll thread (30s) for fast debug toggle and log upload
 - Commands no longer wait for full 10min collection cycle

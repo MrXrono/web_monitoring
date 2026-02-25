@@ -273,11 +273,11 @@ def get_commands(
     try:
         response = session.get(url, timeout=REQUEST_TIMEOUT)
     except requests.RequestException as exc:
-        logger.debug("Failed to fetch commands: %s", exc)
+        logger.warning("Failed to fetch commands: %s", exc)
         return []
 
     if response.status_code != 200:
-        logger.debug("Commands fetch returned HTTP %d", response.status_code)
+        logger.warning("Commands fetch returned HTTP %d", response.status_code)
         return []
 
     try:
