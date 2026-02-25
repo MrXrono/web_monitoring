@@ -230,6 +230,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "overheating": "перегрев",
         "Health": "Состояние",
         "Settings saved successfully.": "Настройки успешно сохранены.",
+        "Toggle theme": "Переключить тему",
     },
     "en": {},
 }
@@ -298,12 +299,25 @@ def _get_lang(request: Request) -> str:
     return "en"
 
 
+def _get_theme(request: Request) -> str:
+    """Determine theme from query param, cookie, or default."""
+    theme = request.query_params.get("theme")
+    if theme in ("light", "dark"):
+        return theme
+    theme = request.cookies.get("theme")
+    if theme in ("light", "dark"):
+        return theme
+    return "light"
+
+
 def _base_context(request: Request, active_page: str = "", **extra) -> dict:
     """Build base template context with common variables."""
     lang = _get_lang(request)
+    theme = _get_theme(request)
     ctx = {
         "request": request,
         "lang": lang,
+        "theme": theme,
         "_": _make_gettext(lang),
         "active_page": active_page,
         "csrf_token": request.cookies.get("csrf_token", ""),
@@ -427,6 +441,7 @@ async def login_submit(
             max_age=86400, httponly=True, samesite="lax", secure=True,
         )
         response.set_cookie("lang", user.language or lang, max_age=31536000)
+        response.set_cookie("theme", getattr(user, "theme", None) or "light", max_age=31536000)
         return response
 
 
@@ -435,6 +450,39 @@ async def logout(request: Request):
     """Clear auth cookie and redirect to login."""
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie("access_token")
+    return response
+
+
+@router.post("/set-preference", include_in_schema=False)
+async def set_preference(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+):
+    """Save user preference (lang or theme) to DB and cookie."""
+    from app.database import async_session
+    from app.models.user import User
+
+    data = await request.json()
+    key = data.get("key")
+    value = data.get("value")
+
+    if key == "lang" and value in ("ru", "en"):
+        pass
+    elif key == "theme" and value in ("light", "dark"):
+        pass
+    else:
+        raise HTTPException(status_code=400, detail="Invalid preference")
+
+    async with async_session() as db:
+        result = await db.execute(select(User).where(User.username == current_user["username"]))
+        user = result.scalar_one_or_none()
+        if user:
+            setattr(user, "language" if key == "lang" else key, value)
+            await db.commit()
+
+    from fastapi.responses import JSONResponse
+    response = JSONResponse({"ok": True})
+    response.set_cookie(key, value, max_age=31536000)
     return response
 
 

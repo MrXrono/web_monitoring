@@ -248,6 +248,8 @@ async def migrate_add_columns():
         ("bbu_units", "capacitance", "VARCHAR(32)"),
         ("bbu_units", "pack_energy", "VARCHAR(32)"),
         ("bbu_units", "flash_size", "VARCHAR(32)"),
+        # users
+        ("users", "theme", "VARCHAR(10) NOT NULL DEFAULT 'light'"),
     ]
     async with engine.begin() as conn:
         for table, column, col_type in _columns:

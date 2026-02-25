@@ -251,6 +251,13 @@
   function switchLanguage(lang) {
     document.cookie = 'lang=' + lang + ';path=/;max-age=31536000';
 
+    // Persist to DB for logged-in users
+    fetch('/set-preference', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'lang', value: lang })
+    }).catch(function () { /* not logged in, cookie is enough */ });
+
     var url = new URL(window.location.href);
     url.searchParams.set('lang', lang);
     window.location.href = url.toString();
@@ -272,6 +279,18 @@
   /* ==========================================================================
      Chart.js Helpers
      ========================================================================== */
+  function isDarkTheme() {
+    return document.documentElement.getAttribute('data-bs-theme') === 'dark';
+  }
+
+  function chartGridColor() {
+    return isDarkTheme() ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  }
+
+  function chartTickColor() {
+    return isDarkTheme() ? '#9ca3af' : '#666';
+  }
+
   function initSmartChart(canvasId, labels, data, label) {
     var canvas = document.getElementById(canvasId);
     if (!canvas) return null;
@@ -314,17 +333,19 @@
             },
             ticks: {
               font: { size: 10 },
-              maxRotation: 0
+              maxRotation: 0,
+              color: chartTickColor()
             }
           },
           y: {
             display: true,
             beginAtZero: true,
             grid: {
-              color: 'rgba(0,0,0,0.05)'
+              color: chartGridColor()
             },
             ticks: {
-              font: { size: 10 }
+              font: { size: 10 },
+              color: chartTickColor()
             }
           }
         },
@@ -369,12 +390,14 @@
         },
         scales: {
           x: {
-            grid: { display: false }
+            grid: { display: false },
+            ticks: { color: chartTickColor() }
           },
           y: {
             beginAtZero: true,
             max: 100,
-            grid: { color: 'rgba(0,0,0,0.05)' }
+            grid: { color: chartGridColor() },
+            ticks: { color: chartTickColor() }
           }
         }
       }
@@ -452,3 +475,32 @@
   };
 
 })();
+
+/* ==========================================================================
+   Theme Toggle (global scope for onclick handlers)
+   ========================================================================== */
+function toggleTheme() {
+  var html = document.documentElement;
+  var current = html.getAttribute('data-bs-theme') || 'light';
+  var next = current === 'dark' ? 'light' : 'dark';
+
+  html.setAttribute('data-bs-theme', next);
+
+  // Toggle sun/moon icons
+  document.querySelectorAll('.theme-icon-light').forEach(function (el) {
+    el.classList.toggle('d-none', next === 'dark');
+  });
+  document.querySelectorAll('.theme-icon-dark').forEach(function (el) {
+    el.classList.toggle('d-none', next !== 'dark');
+  });
+
+  // Set cookie immediately for instant persistence
+  document.cookie = 'theme=' + next + ';path=/;max-age=31536000;SameSite=Lax';
+
+  // Persist to DB for logged-in users
+  fetch('/set-preference', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'theme', value: next })
+  }).catch(function () { /* not logged in, cookie is enough */ });
+}

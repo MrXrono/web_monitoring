@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ lang | default('en') }}" data-bs-theme="light">
+<html lang="{{ lang | default('en') }}" data-bs-theme="{{ theme | default('light') }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -43,7 +43,7 @@
     </main>
 
     <!-- Footer -->
-    <footer class="footer mt-auto py-3 bg-light border-top">
+    <footer class="footer mt-auto py-3 border-top">
         <div class="container-fluid text-center">
             <span class="text-muted small">RAID Monitor v{{ version | default('1.0.0') }} &copy; {{ current_year | default('2026') }}</span>
         </div>

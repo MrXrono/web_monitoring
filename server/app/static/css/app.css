@@ -497,3 +497,171 @@ a {
   justify-content: center;
   z-index: 10;
 }
+
+/* ==========================================================================
+   Dark Theme Overrides (Bootstrap 5.3 data-bs-theme="dark")
+   ========================================================================== */
+
+[data-bs-theme="dark"] {
+  --rm-bg: #1a1d21;
+  --rm-card-bg: #212529;
+  --rm-card-header-bg: #2b3035;
+  --rm-border-color: #373b3e;
+}
+
+[data-bs-theme="dark"] body {
+  background-color: var(--rm-bg);
+}
+
+/* Override bg-white / bg-light utility classes in dark mode */
+[data-bs-theme="dark"] .bg-white {
+  background-color: var(--bs-body-bg) !important;
+}
+
+[data-bs-theme="dark"] .bg-light {
+  background-color: var(--rm-card-header-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-bs-theme="dark"] .text-dark {
+  color: var(--bs-body-color) !important;
+}
+
+/* Cards */
+[data-bs-theme="dark"] .card {
+  border-color: var(--rm-border-color);
+}
+
+[data-bs-theme="dark"] .card-header {
+  border-bottom-color: var(--rm-border-color);
+}
+
+[data-bs-theme="dark"] .card-footer {
+  border-top-color: var(--rm-border-color);
+}
+
+/* Tables */
+[data-bs-theme="dark"] .table th {
+  color: #9ca3af;
+}
+
+[data-bs-theme="dark"] .smart-table th {
+  background-color: var(--rm-card-header-bg);
+}
+
+[data-bs-theme="dark"] .pd-row:hover {
+  background-color: rgba(13, 110, 253, 0.08);
+}
+
+[data-bs-theme="dark"] .smart-table .smart-failing {
+  background-color: rgba(220, 53, 69, 0.15);
+}
+
+/* Cards hover shadows */
+[data-bs-theme="dark"] .summary-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-bs-theme="dark"] .server-card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Settings sidebar */
+[data-bs-theme="dark"] .list-group-item {
+  background-color: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  border-color: var(--rm-border-color);
+}
+
+[data-bs-theme="dark"] .list-group-item:hover {
+  background-color: var(--rm-card-header-bg);
+}
+
+[data-bs-theme="dark"] .list-group-item.active {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+/* Input groups */
+[data-bs-theme="dark"] .input-group-text {
+  background-color: var(--rm-card-header-bg);
+  border-color: var(--rm-border-color);
+}
+
+/* Borders */
+[data-bs-theme="dark"] .border,
+[data-bs-theme="dark"] .border-top,
+[data-bs-theme="dark"] .border-bottom {
+  border-color: var(--rm-border-color) !important;
+}
+
+/* Badge overrides */
+[data-bs-theme="dark"] .badge.bg-light {
+  background-color: var(--rm-card-header-bg) !important;
+}
+
+/* Toast */
+[data-bs-theme="dark"] .toast {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Tab navigation */
+[data-bs-theme="dark"] .nav-tabs .nav-link {
+  color: #9ca3af;
+}
+
+/* Alert severity — keep visible in dark mode */
+[data-bs-theme="dark"] .alert-severity-critical,
+[data-bs-theme="dark"] .alert-severity-warning,
+[data-bs-theme="dark"] .alert-severity-info {
+  background-color: var(--bs-body-bg);
+}
+
+/* Dropdown menus */
+[data-bs-theme="dark"] .dropdown-menu {
+  border-color: var(--rm-border-color);
+}
+
+/* Loading overlay */
+[data-bs-theme="dark"] .loading-overlay::after {
+  background: rgba(26, 29, 33, 0.7);
+}
+
+/* Scrollbar */
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-bs-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Footer */
+[data-bs-theme="dark"] .footer {
+  border-top-color: var(--rm-border-color) !important;
+}
+
+/* Shadow adjustments */
+[data-bs-theme="dark"] .shadow-sm {
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Print - always light */
+@media print {
+  [data-bs-theme="dark"] body {
+    background: white;
+    color: black;
+  }
+}
+
+/* Theme toggle button */
+.theme-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 6px;
+  transition: background-color var(--rm-transition-speed) ease;
+}

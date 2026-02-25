@@ -20,6 +20,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     language: Mapped[str] = mapped_column(String(5), nullable=False, default="en")
+    theme: Mapped[str] = mapped_column(String(10), nullable=False, default="light")
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     local_admin_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
