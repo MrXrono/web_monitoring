@@ -22,11 +22,24 @@ logger = logging.getLogger("raid-monitor")
 
 def setup_logging():
     level = logging.DEBUG if settings.DEBUG else getattr(logging, settings.LOG_LEVEL, logging.INFO)
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+
     logging.basicConfig(
         level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        format=log_format,
+        datefmt=date_format,
     )
+
+    # Also write logs to a file for debug page viewing / upload
+    log_dir = Path(os.environ.get("LOG_DIR", "/app/logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "server.log"
+    file_handler = logging.FileHandler(str(log_file), encoding="utf-8")
+    file_handler.setLevel(level)
+    file_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
+    logging.getLogger().addHandler(file_handler)
+
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
@@ -187,6 +200,51 @@ async def seed_default_settings():
         await db.commit()
 
 
+async def register_prebuilt_packages():
+    """Register pre-built agent RPM packages from /app/agent_packages/ into the database."""
+    import hashlib
+    import re as _re
+    from app.models.agent_package import AgentPackage
+
+    pkg_dir = Path("/app/agent_packages")
+    if not pkg_dir.exists():
+        return
+
+    async with async_session() as db:
+        for rpm_file in pkg_dir.glob("*.rpm"):
+            # Check if already registered
+            result = await db.execute(
+                select(AgentPackage).where(AgentPackage.filename == rpm_file.name)
+            )
+            if result.scalar_one_or_none():
+                continue
+
+            data = rpm_file.read_bytes()
+            sha256 = hashlib.sha256(data).hexdigest()
+            version_match = _re.search(r"raid-agent-(\d+\.\d+\.\d+)", rpm_file.name)
+            version = version_match.group(1) if version_match else "unknown"
+
+            # Check if version already exists
+            result = await db.execute(
+                select(AgentPackage).where(AgentPackage.version == version)
+            )
+            if result.scalar_one_or_none():
+                continue
+
+            pkg = AgentPackage(
+                version=version,
+                filename=rpm_file.name,
+                file_path=str(rpm_file),
+                file_hash_sha256=sha256,
+                file_size=rpm_file.stat().st_size,
+                is_current=True,
+            )
+            db.add(pkg)
+            logger.info("Registered pre-built agent package: %s (v%s)", rpm_file.name, version)
+
+        await db.commit()
+
+
 async def check_admin_expiry():
     """Disable local admin if force-enable expired."""
     from app.models.user import User
@@ -245,6 +303,7 @@ async def lifespan(app: FastAPI):
     await create_initial_admin()
     await seed_default_settings()
     await seed_alert_rules()
+    await register_prebuilt_packages()
 
     scheduler = await start_scheduler()
 

@@ -128,26 +128,76 @@
       </div>
     </div>
 
-    <!-- Upload Logs -->
-    <div class="card border-0 shadow-sm">
+    <!-- Upload Agent Logs -->
+    <div class="card border-0 shadow-sm mb-4">
       <div class="card-header bg-white">
-        <h5 class="card-title mb-0">{{ _('Log Upload') }}</h5>
+        <h5 class="card-title mb-0">{{ _('Agent Log Upload') }}</h5>
       </div>
       <div class="card-body">
-        <p class="text-muted small mb-3">{{ _('Upload collected logs to the file server for analysis.') }}</p>
+        <p class="text-muted small mb-3">{{ _('Upload collected agent logs to the file server for analysis.') }}</p>
         <button class="btn btn-outline-primary"
                 hx-post="/api/settings/debug/upload-logs"
-                hx-swap="none"
+                hx-target="#upload-logs-result"
+                hx-swap="innerHTML"
                 hx-indicator="#upload-logs-spinner">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cloud-arrow-up me-1" viewBox="0 0 16 16">
             <path fill-rule="evenodd" d="M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708l2-2z"/>
             <path d="M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383zm.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z"/>
           </svg>
-          {{ _('Upload Logs to File Server') }}
+          {{ _('Upload Agent Logs to File Server') }}
           <span id="upload-logs-spinner" class="spinner-border spinner-border-sm ms-1 htmx-indicator" role="status"></span>
         </button>
+        <div id="upload-logs-result" class="mt-2"></div>
+      </div>
+    </div>
+
+    <!-- Server Log -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">{{ _('Server Log') }}</h5>
+        <div>
+          <button class="btn btn-sm btn-outline-primary"
+                  hx-post="/api/settings/debug/upload-server-log"
+                  hx-target="#upload-server-log-result"
+                  hx-swap="innerHTML"
+                  hx-indicator="#upload-server-log-spinner">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-cloud-arrow-up me-1" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708l2-2z"/>
+              <path d="M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383zm.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z"/>
+            </svg>
+            {{ _('Upload Server Log') }}
+            <span id="upload-server-log-spinner" class="spinner-border spinner-border-sm ms-1 htmx-indicator" role="status"></span>
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div id="upload-server-log-result" class="px-3 pt-2"></div>
+        {% if server_log is defined and server_log %}
+        <pre class="mb-0 p-3 bg-dark text-light small" style="max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem;">{{ server_log }}</pre>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <p class="mb-0">{{ _('No server log available.') }}</p>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
 </div>
+
+<script>
+// Handle HTMX JSON responses for upload buttons — show result as alert
+document.body.addEventListener('htmx:beforeSwap', function(evt) {
+    if (evt.detail.target.id === 'upload-logs-result' || evt.detail.target.id === 'upload-server-log-result') {
+        try {
+            var data = JSON.parse(evt.detail.xhr.responseText);
+            var cls = data.success ? 'alert-success' : 'alert-danger';
+            var msg = data.message || 'Unknown error';
+            if (data.url) {
+                msg += ' <a href="' + data.url + '" target="_blank" class="alert-link">{{ _("Download") }}</a>';
+            }
+            evt.detail.serverResponse = '<div class="alert ' + cls + ' alert-dismissible fade show py-2 mb-0" role="alert">' + msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+        } catch(e) {}
+    }
+});
+</script>
 {% endblock %}

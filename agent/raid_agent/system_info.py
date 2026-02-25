@@ -159,33 +159,51 @@ def _parse_os_release() -> Dict[str, str]:
 
 
 def _get_cpu_model() -> str:
-    """Extract CPU model name from /proc/cpuinfo.
+    """Extract CPU model with physical socket count from /proc/cpuinfo.
+
+    Counts unique ``physical id`` values to determine socket count,
+    then formats as ``Nx Model Name`` (e.g. ``2x Intel Xeon Gold 6234``).
 
     Returns:
-        CPU model string, or empty string on failure.
+        CPU model string with socket prefix, or empty string on failure.
     """
+    model_name = ""
+    physical_ids = set()
+
     try:
         with open("/proc/cpuinfo", "r", encoding="utf-8") as fh:
             for line in fh:
-                if line.lower().startswith("model name"):
-                    _, _, model = line.partition(":")
-                    return model.strip()
+                stripped = line.strip()
+                if not model_name and stripped.lower().startswith("model name"):
+                    _, _, model_name = stripped.partition(":")
+                    model_name = model_name.strip()
+                elif stripped.lower().startswith("physical id"):
+                    _, _, pid = stripped.partition(":")
+                    physical_ids.add(pid.strip())
     except (OSError, IOError) as exc:
         logger.debug("Failed to read /proc/cpuinfo: %s", exc)
 
-    # Fallback for non-x86 architectures
-    try:
-        with open("/proc/cpuinfo", "r", encoding="utf-8") as fh:
-            for line in fh:
-                if line.lower().startswith("hardware") or line.lower().startswith("cpu"):
-                    _, _, model = line.partition(":")
-                    model = model.strip()
-                    if model:
-                        return model
-    except (OSError, IOError):
-        pass
+    if not model_name:
+        # Fallback for non-x86 architectures
+        try:
+            with open("/proc/cpuinfo", "r", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.lower().startswith("hardware") or line.lower().startswith("cpu"):
+                        _, _, model_name = line.partition(":")
+                        model_name = model_name.strip()
+                        if model_name:
+                            break
+        except (OSError, IOError):
+            pass
 
-    return platform.processor() or ""
+    if not model_name:
+        model_name = platform.processor() or ""
+
+    if not model_name:
+        return ""
+
+    socket_count = len(physical_ids) if physical_ids else 1
+    return f"{socket_count}x {model_name}"
 
 
 def _get_ram_total_gb() -> float:

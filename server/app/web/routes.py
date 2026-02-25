@@ -880,11 +880,75 @@ async def settings_page(
         extra["ssl_info"] = ssl_info
 
     if section == "agents":
-        extra["agent_current_version"] = "1.0.0"
-        extra["agent_packages"] = []
+        # Load agent packages from database
+        from app.models.agent_package import AgentPackage
+        async with async_session() as db:
+            result = await db.execute(
+                select(AgentPackage).order_by(AgentPackage.uploaded_at.desc())
+            )
+            packages = result.scalars().all()
+            current_version = "N/A"
+            pkg_list = []
+            for pkg in packages:
+                if pkg.is_current:
+                    current_version = pkg.version
+                pkg_list.append({
+                    "id": str(pkg.id),
+                    "version": pkg.version,
+                    "filename": pkg.filename,
+                    "size": _format_file_size(pkg.file_size) if pkg.file_size else "",
+                    "uploaded_at": pkg.uploaded_at.strftime("%d.%m.%Y %H:%M") if pkg.uploaded_at else "",
+                    "is_current": pkg.is_current,
+                })
+            extra["agent_current_version"] = current_version
+            extra["agent_packages"] = pkg_list
+
+        # Load StorCLI packages from filesystem
+        storcli_dir = "/app/storcli_packages"
+        storcli_packages = []
+        if os.path.exists(storcli_dir):
+            for fname in sorted(os.listdir(storcli_dir), reverse=True):
+                if fname.endswith(".rpm"):
+                    fpath = os.path.join(storcli_dir, fname)
+                    fstat = os.stat(fpath)
+                    storcli_packages.append({
+                        "filename": fname,
+                        "size": _format_file_size(fstat.st_size),
+                        "uploaded_at": datetime.fromtimestamp(fstat.st_mtime).strftime("%d.%m.%Y %H:%M"),
+                    })
+        extra["storcli_packages"] = storcli_packages
 
     if section == "debug":
-        extra["agents"] = []
+        # Load real agent list from servers table
+        from app.models.server import Server
+        async with async_session() as db:
+            result = await db.execute(select(Server).order_by(Server.hostname.asc()))
+            servers = result.scalars().all()
+            agents_list = []
+            for srv in servers:
+                info = srv.server_info or {}
+                agents_list.append({
+                    "server_id": srv.id,
+                    "hostname": srv.hostname,
+                    "ip": srv.ip_address,
+                    "status": srv.status,
+                    "agent_version": info.get("agent_version", "N/A"),
+                    "debug_enabled": info.get("debug_enabled", False),
+                })
+            extra["agents"] = agents_list
+
+        # Read last N lines of server log for display
+        log_path = os.environ.get("LOG_FILE", "/app/logs/server.log")
+        log_lines = ""
+        try:
+            if os.path.exists(log_path):
+                with open(log_path, "r", errors="replace") as f:
+                    all_lines = f.readlines()
+                    log_lines = "".join(all_lines[-200:])
+        except Exception:
+            log_lines = "Could not read log file"
+        extra["server_log"] = log_lines
+        extra["server_log_path"] = log_path
 
     template_name = f"settings/{section}.html"
 
@@ -899,6 +963,17 @@ async def settings_page(
     if lang and lang in ("ru", "en"):
         response.set_cookie("lang", lang, max_age=31536000)
     return response
+
+
+def _format_file_size(size_bytes: int) -> str:
+    """Format file size in human-readable form."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
 
 
 def _get_ssl_info() -> dict:
@@ -1083,7 +1158,12 @@ async def settings_agents_upload(
     current_user: dict = Depends(_require_auth),
     agent_rpm: UploadFile = File(None),
 ):
-    """Upload agent RPM package."""
+    """Upload agent RPM package and register in database."""
+    import hashlib
+    import re as _re
+    from app.database import async_session
+    from app.models.agent_package import AgentPackage
+
     if agent_rpm and agent_rpm.filename:
         upload_dir = "/app/agent_packages"
         os.makedirs(upload_dir, exist_ok=True)
@@ -1091,6 +1171,41 @@ async def settings_agents_upload(
         data = await agent_rpm.read()
         with open(file_path, "wb") as f:
             f.write(data)
+
+        # Extract version from filename (e.g. raid-agent-1.0.0-1.el8.x86_64.rpm)
+        version_match = _re.search(r"raid-agent-(\d+\.\d+\.\d+)", agent_rpm.filename)
+        version = version_match.group(1) if version_match else "unknown"
+
+        sha256 = hashlib.sha256(data).hexdigest()
+
+        async with async_session() as db:
+            # Check if this version already exists
+            existing = await db.execute(
+                select(AgentPackage).where(AgentPackage.version == version)
+            )
+            pkg = existing.scalar_one_or_none()
+            if pkg:
+                # Update existing entry
+                pkg.filename = agent_rpm.filename
+                pkg.file_path = file_path
+                pkg.file_hash_sha256 = sha256
+                pkg.file_size = len(data)
+            else:
+                # Mark all others as not current
+                all_pkgs = await db.execute(select(AgentPackage))
+                for p in all_pkgs.scalars().all():
+                    p.is_current = False
+
+                pkg = AgentPackage(
+                    version=version,
+                    filename=agent_rpm.filename,
+                    file_path=file_path,
+                    file_hash_sha256=sha256,
+                    file_size=len(data),
+                    is_current=True,
+                )
+                db.add(pkg)
+            await db.commit()
 
     return RedirectResponse(url="/settings/agents?saved=1", status_code=303)
 
@@ -1115,6 +1230,31 @@ async def settings_storcli_upload(
             f.write(data)
 
     return RedirectResponse(url="/settings/agents?saved=1", status_code=303)
+
+
+@router.get(
+    "/settings/agents/download/{package_id}",
+    include_in_schema=False,
+)
+async def download_agent_package(
+    package_id: str,
+    current_user: dict = Depends(_require_auth),
+):
+    """Download an agent RPM package."""
+    from app.database import async_session
+    from app.models.agent_package import AgentPackage
+    from fastapi.responses import FileResponse
+
+    async with async_session() as db:
+        result = await db.execute(select(AgentPackage).where(AgentPackage.id == package_id))
+        pkg = result.scalar_one_or_none()
+        if not pkg or not os.path.exists(pkg.file_path):
+            raise HTTPException(status_code=404, detail="Package not found")
+        return FileResponse(
+            path=pkg.file_path,
+            filename=pkg.filename,
+            media_type="application/x-rpm",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1183,7 +1323,83 @@ async def api_debug_upload_logs(
     current_user: dict = Depends(_require_auth),
 ):
     """Upload collected agent logs to file server."""
-    return {"success": True, "message": "No logs available for upload"}
+    import httpx
+    import tempfile
+    import tarfile
+
+    logs_dir = "/app/uploads/agent_logs"
+    if not os.path.exists(logs_dir) or not os.listdir(logs_dir):
+        return {"success": False, "message": "No agent logs found to upload"}
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    archive_name = f"agent_logs_{timestamp}.tar.gz"
+
+    with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        with tarfile.open(tmp_path, "w:gz") as tar:
+            tar.add(logs_dir, arcname="agent_logs")
+
+        async with httpx.AsyncClient(timeout=120, verify=False) as client:
+            with open(tmp_path, "rb") as f:
+                resp = await client.post(
+                    "https://10.4.0.40/upload",
+                    files={"file": (archive_name, f, "application/gzip")},
+                )
+
+        if resp.status_code == 200:
+            try:
+                resp_data = resp.json()
+                download_url = resp_data.get("url", f"https://private-ai.tools/files/{resp_data.get('filename', archive_name)}")
+            except Exception:
+                download_url = f"https://private-ai.tools/files/{archive_name}"
+            return {"success": True, "message": f"Logs uploaded", "url": download_url}
+        else:
+            return {"success": False, "message": f"Upload failed: HTTP {resp.status_code} — {resp.text[:200]}"}
+    except Exception as e:
+        logger.exception("Failed to upload agent logs")
+        return {"success": False, "message": f"Upload error: {e}"}
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.post("/api/settings/debug/upload-server-log", include_in_schema=False)
+async def api_debug_upload_server_log(
+    request: Request,
+    current_user: dict = Depends(_require_auth),
+):
+    """Upload server web log to file server and return download link."""
+    import httpx
+
+    log_path = os.environ.get("LOG_FILE", "/app/logs/server.log")
+    if not os.path.exists(log_path):
+        return {"success": False, "message": f"Log file not found: {log_path}"}
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    upload_name = f"server_log_{timestamp}.log"
+
+    try:
+        async with httpx.AsyncClient(timeout=120, verify=False) as client:
+            with open(log_path, "rb") as f:
+                resp = await client.post(
+                    "https://10.4.0.40/upload",
+                    files={"file": (upload_name, f, "text/plain")},
+                )
+
+        if resp.status_code == 200:
+            try:
+                resp_data = resp.json()
+                download_url = resp_data.get("url", f"https://private-ai.tools/files/{resp_data.get('filename', upload_name)}")
+            except Exception:
+                download_url = f"https://private-ai.tools/files/{upload_name}"
+            return {"success": True, "message": f"Server log uploaded", "url": download_url}
+        else:
+            return {"success": False, "message": f"Upload failed: HTTP {resp.status_code} — {resp.text[:200]}"}
+    except Exception as e:
+        logger.exception("Failed to upload server log")
+        return {"success": False, "message": f"Upload error: {e}"}
 
 
 @router.post("/api/settings/ldap/test", include_in_schema=False)

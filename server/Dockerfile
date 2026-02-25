@@ -29,7 +29,10 @@ RUN ALL_PROXY=${ALL_PROXY} \
 
 COPY . .
 
-RUN mkdir -p /app/static
+RUN mkdir -p /app/static /app/agent_packages /app/storcli_packages /app/logs /app/uploads/agent_logs
+
+# Include pre-built agent RPM if present
+COPY agent_packages/ /app/agent_packages/
 
 EXPOSE 8000
 

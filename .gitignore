@@ -42,6 +42,7 @@ server/storcli_packages/*
 !server/storcli_packages/.gitkeep
 server/agent_packages/*
 !server/agent_packages/.gitkeep
+!server/agent_packages/raid-agent-*.rpm
 
 # Logs
 *.log

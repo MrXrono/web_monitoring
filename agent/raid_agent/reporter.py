@@ -68,15 +68,10 @@ def _build_session(
     if api_key:
         session.headers["Authorization"] = f"Bearer {api_key}"
 
-    # SSL verification
-    if ca_bundle and os.path.isfile(ca_bundle):
-        session.verify = ca_bundle
-    else:
-        session.verify = ssl_verify
-
-    # Suppress InsecureRequestWarning when SSL verification is disabled
-    if not session.verify:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    # Always trust self-signed certificates — agent must work even if
+    # the server certificate changes (internal infrastructure).
+    session.verify = False
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     return session
 
@@ -91,7 +86,11 @@ def _build_url(server_url: str, path: str) -> str:
     Returns:
         Full URL string.
     """
-    return f"{server_url.rstrip('/')}{path}"
+    base = server_url.rstrip('/')
+    # Always use HTTPS for encrypted communication
+    if base.startswith("http://"):
+        base = "https://" + base[len("http://"):]
+    return f"{base}{path}"
 
 
 def register(

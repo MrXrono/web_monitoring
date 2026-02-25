@@ -419,6 +419,7 @@ def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
     version = response.get("Version", {})
     status = response.get("Status", {})
     hw_cfg = response.get("HwCfg", {})
+    bus = response.get("Bus", {})
 
     # Extract rebuild rate from Policies section
     rebuild_rate = _extract_policy_value(response, "Rebuild Rate")
@@ -452,7 +453,7 @@ def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
         "serial_number": basics.get("Serial Number", ""),
         "status": status.get("Controller Status", ""),
         "firmware_version": version.get("Firmware Version", ""),
-        "bios_version": version.get("BIOS Version", ""),
+        "bios_version": version.get("Bios Version", version.get("BIOS Version", "")),
         "driver_version": version.get("Driver Version", ""),
         "memory_size": hw_cfg.get("On Board Memory Size", ""),
         "memory_correctable_errors": _safe_int(status.get("Memory Correctable Errors", 0)),
@@ -464,9 +465,18 @@ def parse_controller(response: Dict[str, Any]) -> Dict[str, Any]:
         "patrol_read_status": patrol_read or None,
         "rebuild_rate": rebuild_rate if rebuild_rate else None,
         "cc_status": f"{cc_rate}%" if cc_rate else None,
-        "host_interface": hw_cfg.get("Host Interface", ""),
+        "host_interface": bus.get("Host Interface", hw_cfg.get("Host Interface", "")),
         "product_name": basics.get("Product Name", ""),
         "supported_raid_levels": _parse_supported_raids(response),
+        # Scheduled tasks
+        "next_cc_launch": sched.get("Next Consistency check launch", "") if isinstance(sched, dict) else "",
+        "next_pr_launch": sched.get("Next Patrol Read launch", "") if isinstance(sched, dict) else "",
+        "next_battery_learn": sched.get("Next Battery Learn", "") if isinstance(sched, dict) else "",
+        # Additional status
+        "ecc_bucket_count": _safe_int(status.get("ECC Bucket Count", 0)),
+        # Additional version info
+        "firmware_package_build": version.get("Firmware Package Build", ""),
+        "driver_name": version.get("Driver Name", ""),
     }
 
 
@@ -510,7 +520,7 @@ def _parse_supported_raids(response: Dict[str, Any]) -> List[str]:
         List of supported RAID level strings.
     """
     capabilities = response.get("Capabilities", {})
-    raid_levels = capabilities.get("Supported RAID Levels", "")
+    raid_levels = capabilities.get("RAID Level Supported", capabilities.get("Supported RAID Levels", ""))
 
     if isinstance(raid_levels, list):
         return raid_levels
@@ -623,6 +633,9 @@ def _parse_single_vd(
         "os_drive_name": str(properties.get("OS Drive Name", "")),
         "creation_date": str(properties.get("Creation Date", "")),
         "creation_time": str(properties.get("Creation Time", "")),
+        "active_operations": str(properties.get("Active Operations", "")),
+        "write_cache": str(properties.get("Write Cache(initial setting)", properties.get("Write Cache", ""))),
+        "span_depth": _safe_int(properties.get("Span Depth", 0)),
     }
 
 
@@ -725,8 +738,16 @@ def _parse_single_pd(
             firmware = device_attrs.get("Firmware Revision", "")
             model = device_attrs.get("Model Number", model)
             manufacturer = device_attrs.get("Manufacturer Id", "")
+            link_speed = device_attrs.get("Link Speed", "")
+            device_speed = device_attrs.get("Device Speed", "")
+            physical_sector_size = device_attrs.get("Physical Sector Size", "")
+            wwn = device_attrs.get("WWN", "")
         else:
             manufacturer = ""
+            link_speed = ""
+            device_speed = ""
+            physical_sector_size = ""
+            wwn = ""
 
         # State attributes
         state_key = f"Drive /c{cx}/e{enclosure}/s{slot} State"
@@ -769,6 +790,10 @@ def _parse_single_pd(
         "span": _safe_int(pd_raw.get("Sp", -1)),
         "device_id": _safe_int(pd_raw.get("DID", pd_raw.get("Device Id", -1))),
         "sector_size": str(pd_raw.get("SeSz", pd_raw.get("Sector Size", ""))),
+        "link_speed": str(link_speed).strip(),
+        "device_speed": str(device_speed).strip(),
+        "physical_sector_size": str(physical_sector_size).strip(),
+        "wwn": str(wwn).strip(),
         "smart_data": smart_attributes,
     }
 
@@ -819,6 +844,10 @@ def _parse_cachevault_from_controller(response: Dict[str, Any]) -> Optional[Dict
         "temperature": int(temp) if temp is not None else None,
         "manufacture_date": str(mfg_date),
         "replacement_needed": state.lower() not in ("optimal", "opt", "ready", ""),
+        # Extended fields from controller show all are limited
+        "capacitance": "",
+        "pack_energy": "",
+        "flash_size": str(cv_entry.get("WriteSize", "")),
     }
 
 
@@ -1064,6 +1093,23 @@ def _parse_event_time(time_str: str) -> Optional[str]:
     return time_str
 
 
+def _prop_value_list_to_dict(data) -> Dict[str, str]:
+    """Convert a list of {"Property": ..., "Value": ...} dicts to a flat dict.
+
+    storcli7 /cx/cv show all J returns data in this format instead of
+    regular key-value dicts.
+    """
+    if isinstance(data, dict):
+        return data
+    if not isinstance(data, list):
+        return {}
+    result = {}
+    for item in data:
+        if isinstance(item, dict) and "Property" in item and "Value" in item:
+            result[item["Property"]] = item["Value"]
+    return result
+
+
 def parse_bbu(response: Dict[str, Any], source: str = "bbu") -> Dict[str, Any]:
     """Parse BBU (Battery Backup Unit) or CacheVault status.
 
@@ -1120,13 +1166,21 @@ def parse_bbu(response: Dict[str, Any], source: str = "bbu") -> Dict[str, Any]:
 
     elif source == "cv":
         # CacheVault data parsing
-        cv_info = response.get("Cachevault_Info", response)
-        if isinstance(cv_info, list) and cv_info:
-            cv_info = cv_info[0]
+        # /cx/cv show all J returns arrays of {"Property": ..., "Value": ...}
+        # Convert them to dicts for easier access
+        cv_info_raw = response.get("Cachevault_Info", [])
+        cv_firmware_raw = response.get("Firmware_Status", [])
+        cv_gasgauge_raw = response.get("GasGaugeStatus", [])
+        cv_design_raw = response.get("Design_Info", [])
 
-        if isinstance(cv_info, dict):
+        cv_info = _prop_value_list_to_dict(cv_info_raw)
+        cv_firmware = _prop_value_list_to_dict(cv_firmware_raw)
+        cv_gasgauge = _prop_value_list_to_dict(cv_gasgauge_raw)
+        cv_design = _prop_value_list_to_dict(cv_design_raw)
+
+        if cv_info:
             temp = _parse_temperature(cv_info.get("Temp", cv_info.get("Temperature", "")))
-            model = cv_info.get("Model", "")
+            model = cv_info.get("Type", cv_info.get("Model", ""))
             result.update({
                 "bbu_type": model or "CacheVault",
                 "temperature": int(temp) if temp is not None else None,
@@ -1134,12 +1188,19 @@ def parse_bbu(response: Dict[str, Any], source: str = "bbu") -> Dict[str, Any]:
                 "replacement_needed": str(cv_info.get("Replacement required", "No")).lower() in ("yes", "true", "1"),
             })
 
-        # CacheVault firmware info
-        cv_firmware = response.get("Firmware_Status", {})
-        if isinstance(cv_firmware, dict):
+        if cv_firmware:
             health = str(cv_firmware.get("Health", ""))
             if health and not result.get("state"):
                 result["state"] = health
+
+        # CacheVault extended info
+        if cv_gasgauge:
+            result["capacitance"] = str(cv_gasgauge.get("Capacitance", ""))
+            result["pack_energy"] = str(cv_gasgauge.get("Pack Energy", ""))
+
+        if cv_design:
+            result["manufacture_date"] = str(cv_design.get("Date of Manufacture", ""))
+            result["flash_size"] = str(cv_design.get("CacheVault Flash Size", ""))
 
     return result
 

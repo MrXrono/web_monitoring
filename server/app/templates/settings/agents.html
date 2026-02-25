@@ -93,6 +93,12 @@
                 <td class="small text-muted">{{ pkg.size | default('') }}</td>
                 <td class="small text-muted">{{ pkg.uploaded_at | default('') }}</td>
                 <td>
+                  <a href="/settings/agents/download/{{ pkg.id }}" class="btn btn-sm btn-outline-secondary me-1" title="{{ _('Download') }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">
+                      <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                      <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                    </svg>
+                  </a>
                   {% if not pkg.is_current %}
                   <button class="btn btn-sm btn-outline-primary"
                           hx-put="/api/settings/agents/packages/{{ pkg.id }}/set-current"
@@ -115,8 +121,8 @@
       </div>
     </div>
 
-    <!-- StorCLI Package -->
-    <div class="card border-0 shadow-sm">
+    <!-- StorCLI Package Upload -->
+    <div class="card border-0 shadow-sm mb-4">
       <div class="card-header bg-white">
         <h5 class="card-title mb-0">{{ _('StorCLI Package') }}</h5>
       </div>
@@ -140,6 +146,41 @@
             </div>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Uploaded StorCLI Packages -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white">
+        <h5 class="card-title mb-0">{{ _('Uploaded StorCLI Packages') }}</h5>
+      </div>
+      <div class="card-body p-0">
+        {% if storcli_packages is defined and storcli_packages | length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>{{ _('Filename') }}</th>
+                <th>{{ _('Size') }}</th>
+                <th>{{ _('Uploaded') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for pkg in storcli_packages %}
+              <tr>
+                <td class="fw-semibold">{{ pkg.filename }}</td>
+                <td class="small text-muted">{{ pkg.size }}</td>
+                <td class="small text-muted">{{ pkg.uploaded_at }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <p class="mb-0">{{ _('No StorCLI packages uploaded yet.') }}</p>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
