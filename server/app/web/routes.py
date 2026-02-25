@@ -223,6 +223,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "failed": "неисправен",
         "Controller overheating": "Перегрев контроллера",
         "predictive failure": "предсказанный сбой",
+        "uncorrectable memory errors": "некорректируемых ошибок памяти",
+        "BBU replacement required": "Требуется замена BBU",
+        "alert": "тревога",
+        "media errors": "ошибок чтения",
+        "overheating": "перегрев",
         "Health": "Состояние",
         "Settings saved successfully.": "Настройки успешно сохранены.",
     },
@@ -472,6 +477,7 @@ async def dashboard_page(
         query = select(Server).options(
             selectinload(Server.controllers).selectinload(Controller.virtual_drives),
             selectinload(Server.controllers).selectinload(Controller.physical_drives),
+            selectinload(Server.controllers).selectinload(Controller.bbu),
         )
         if search:
             query = query.where(
@@ -534,13 +540,47 @@ async def dashboard_page(
             if pd_bad > 0:
                 health_issues.append(f"PD: {pd_bad} " + _("failed"))
             for ctrl in (srv.controllers or []):
-                if ctrl.roc_temperature and ctrl.roc_temperature > 90:
-                    health_issues.append(_("Controller overheating"))
+                # Controller status
+                if ctrl.status and ctrl.status.lower() not in ("optimal", "opt", ""):
+                    health_issues.append(f"Ctrl#{ctrl.controller_id}: {ctrl.status}")
+                # Controller overheating
+                if ctrl.roc_temperature and ctrl.roc_temperature > 80:
+                    health_issues.append(_("Controller overheating") + f" ({ctrl.roc_temperature}C)")
+                # Memory uncorrectable errors
+                if (ctrl.memory_uncorrectable_errors or 0) > 0:
+                    health_issues.append(f"Ctrl#{ctrl.controller_id}: {ctrl.memory_uncorrectable_errors} " + _("uncorrectable memory errors"))
+                # ECC bucket count
+                if (ctrl.ecc_bucket_count or 0) > 0:
+                    health_issues.append(f"Ctrl#{ctrl.controller_id}: ECC bucket {ctrl.ecc_bucket_count}")
+                # BBU / CacheVault
+                if ctrl.bbu:
+                    bbu_state = (ctrl.bbu.state or "").lower()
+                    if bbu_state and bbu_state not in ("optimal", "opt", "ready", ""):
+                        health_issues.append(f"BBU: {ctrl.bbu.state}")
+                    if ctrl.bbu.replacement_needed:
+                        health_issues.append(_("BBU replacement required"))
+                # Physical drives
                 for pd in (ctrl.physical_drives or []):
-                    if pd.predictive_failure and str(pd.predictive_failure).lower() not in ("0", "no", "false", ""):
+                    # Predictive failure
+                    if (pd.predictive_failure or 0) > 0:
                         health_issues.append(f"PD {pd.enclosure_id}:{pd.slot_number} " + _("predictive failure"))
-                        break
-            health_status = "; ".join(health_issues) if health_issues else "OK"
+                    # SMART alert
+                    if pd.smart_alert:
+                        health_issues.append(f"PD {pd.enclosure_id}:{pd.slot_number} SMART " + _("alert"))
+                    # Media errors
+                    if (pd.media_error_count or 0) > 0:
+                        health_issues.append(f"PD {pd.enclosure_id}:{pd.slot_number}: {pd.media_error_count} " + _("media errors"))
+                    # Drive overheating
+                    if pd.temperature and pd.temperature > 55:
+                        health_issues.append(f"PD {pd.enclosure_id}:{pd.slot_number} " + _("overheating") + f" ({pd.temperature}C)")
+            # Deduplicate while preserving order
+            seen = set()
+            unique_issues = []
+            for issue in health_issues:
+                if issue not in seen:
+                    seen.add(issue)
+                    unique_issues.append(issue)
+            health_status = "; ".join(unique_issues) if unique_issues else "OK"
 
             servers.append({
                 "id": str(srv.id),
