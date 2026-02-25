@@ -366,7 +366,8 @@ async def start_scheduler():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_logging()
+    # setup_logging() is called once in __main__ before uvicorn.run()
+    # Calling it here again would duplicate handlers and log lines
     logger.info("Starting RAID Monitor Web Server...")
 
     generate_env_file()

@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.1
+%define version     1.0.2
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -20,7 +20,7 @@ Source0:        %{name}-%{version}.tar.gz
 BuildArch:      noarch
 BuildRequires:  python3 >= 3.9
 BuildRequires:  python3-devel
-BuildRequires:  systemd-rpm-macros
+# systemd macros replaced with explicit commands for cross-distro build compatibility
 
 Requires:       python3 >= 3.9
 Requires:       python3-pip
@@ -134,7 +134,6 @@ if command -v semodule >/dev/null 2>&1 && [ -f %{selinux_dir}/raid-agent.te ]; t
 fi
 
 # Reload systemd, enable and start service
-%systemd_post raid-agent.service
 systemctl daemon-reload
 systemctl enable raid-agent.service 2>/dev/null || true
 
@@ -150,8 +149,6 @@ fi
 
 %preun
 # Pre-uninstall: stop and disable service
-%systemd_preun raid-agent.service
-
 if [ $1 -eq 0 ]; then
     # Full uninstall (not upgrade)
     systemctl stop raid-agent.service 2>/dev/null || true
@@ -164,7 +161,10 @@ if [ $1 -eq 0 ]; then
 fi
 
 %postun
-%systemd_postun_with_restart raid-agent.service
+if [ $1 -ge 1 ]; then
+    # Upgrade: restart service
+    systemctl try-restart raid-agent.service 2>/dev/null || true
+fi
 
 if [ $1 -eq 0 ]; then
     # Full uninstall: clean up virtualenv and symlink
@@ -206,6 +206,10 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.2-1
+- Background command poll thread (30s) for fast debug toggle and log upload
+- Commands no longer wait for full 10min collection cycle
+
 * Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.1-1
 - Fix: PD interface fallback from detailed attrs and speed inference
 - Fix: immediate log level switching on debug command from server
