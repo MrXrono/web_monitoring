@@ -340,19 +340,31 @@ def _collect_controller(
     _resolve_relative_event_times(controller_report["events"])
 
     # Battery / Capacitor
+    bbu_ok = False
     try:
         raw = run_storcli(storcli_path, [f"/c{cx}/bbu", "show", "all", "J"])
         response = _get_response_data(raw)
-        controller_report["bbu"] = parse_bbu(response, source="bbu")
-    except Exception:
-        # BBU might not exist; try CacheVault (CV) instead
+        bbu_result = parse_bbu(response, source="bbu")
+        if bbu_result.get("present") and bbu_result.get("state"):
+            controller_report["bbu"] = bbu_result
+            bbu_ok = True
+            logger.debug("BBU data from /c%d/bbu: state=%s", cx, bbu_result.get("state"))
+    except Exception as exc1:
+        logger.debug("BBU command failed for /c%d: %s", cx, exc1)
+
+    if not bbu_ok:
+        # BBU not present or returned no useful data; try CacheVault (CV)
         try:
             raw = run_storcli(storcli_path, [f"/c{cx}/cv", "show", "all", "J"])
             response = _get_response_data(raw)
-            controller_report["bbu"] = parse_bbu(response, source="cv")
+            cv_result = parse_bbu(response, source="cv")
+            if cv_result.get("present") and cv_result.get("state"):
+                controller_report["bbu"] = cv_result
+                bbu_ok = True
+                logger.info("CacheVault data from /c%d/cv: state=%s, capacitance=%s",
+                            cx, cv_result.get("state"), cv_result.get("capacitance"))
         except Exception as exc2:
-            msg = f"No BBU/CV found for /c{cx}: {exc2}"
-            logger.debug(msg)
+            logger.debug("No BBU/CV found for /c%d: %s", cx, exc2)
             # Not appending to errors - BBU may legitimately not be present
 
     # Supplement or replace BBU data with CacheVault info from controller show all
@@ -370,6 +382,22 @@ def _collect_controller(
                     bbu_data["bbu_type"] = cv_fallback.get("bbu_type", bbu_data.get("bbu_type"))
                 if bbu_data.get("temperature") is None and cv_fallback.get("temperature") is not None:
                     bbu_data["temperature"] = cv_fallback["temperature"]
+
+    # If we have basic CacheVault info but no extended data, try /cx/cv show all once more
+    bbu_data = controller_report.get("bbu") or {}
+    is_cachevault = bbu_data.get("bbu_type", "").upper().startswith("CVPM") or bbu_data.get("type") == "CV"
+    if is_cachevault and bbu_data.get("state") and not bbu_data.get("capacitance"):
+        try:
+            raw = run_storcli(storcli_path, [f"/c{cx}/cv", "show", "all", "J"])
+            response = _get_response_data(raw)
+            cv_extended = parse_bbu(response, source="cv")
+            # Merge extended fields into existing data
+            for key in ("capacitance", "pack_energy", "design_capacity", "flash_size", "manufacture_date"):
+                if cv_extended.get(key) and not bbu_data.get(key):
+                    bbu_data[key] = cv_extended[key]
+            logger.info("Supplemented CacheVault data from /c%d/cv show all", cx)
+        except Exception:
+            logger.debug("Could not get extended CacheVault data for /c%d", cx)
 
     return controller_report
 

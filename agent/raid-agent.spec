@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.3
+%define version     1.0.4
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -206,6 +206,12 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.4-1
+- Fix: CacheVault data collection — /cx/cv show all J now executed correctly
+- BBU/CV fallback logic rewritten: try BBU first, then CV, then controller fallback
+- CacheVault extended data (capacitance, pack_energy, design_capacity) now collected
+- Web UI: Charge field shows Capacitance for CacheVault, Energy shows pack/design ratio
+
 * Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.3-1
 - Fix: command poll errors now logged at WARNING level (were silently swallowed at DEBUG)
 - Improved diagnostics for server communication failures
