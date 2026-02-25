@@ -375,24 +375,31 @@ async def login_submit(
         # LDAP fallback
         if not authenticated:
             try:
-                from app.services.ldap_auth import ldap_authenticate
-                ldap_result = await ldap_authenticate(db, username, password)
+                from app.services.ldap_auth import authenticate_ldap
+                ldap_result = await authenticate_ldap(username, password)
                 if ldap_result:
                     if user is None:
                         user = User(
                             username=username,
                             display_name=ldap_result.get("display_name", username),
+                            email=ldap_result.get("email") or None,
                             auth_source="ldap",
                             is_active=True,
                             is_admin=ldap_result.get("is_admin", False),
                             language=lang,
                         )
                         db.add(user)
-                        await db.commit()
-                        await db.refresh(user)
+                    else:
+                        user.display_name = ldap_result.get("display_name") or user.display_name
+                        user.email = ldap_result.get("email") or user.email
+                        user.auth_source = "ldap"
+                        user.is_admin = ldap_result.get("is_admin", False)
+                    user.last_login = datetime.now(timezone.utc)
+                    await db.commit()
+                    await db.refresh(user)
                     authenticated = True
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.exception("LDAP authentication error: %s", exc)
 
         if not authenticated:
             ctx = _base_context(request, active_page="login", error=_("Invalid credentials"))
