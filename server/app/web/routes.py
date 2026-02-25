@@ -1542,7 +1542,7 @@ async def server_events_partial(
     per_page = 50
 
     try:
-        from app.core.database import async_session
+        from app.database import async_session
         async with async_session() as db:
             # Base query: events for all controllers of this server
             base_q = (
