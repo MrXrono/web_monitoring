@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from datetime import datetime
 
@@ -71,12 +71,14 @@ class PdReport(BaseModel):
 
 
 class EventReport(BaseModel):
-    seq_num: Optional[int] = None
-    time: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    seq_num: Optional[int] = Field(None, alias="event_id")
+    time: Optional[str] = Field(None, alias="event_time")
     severity: Optional[str] = None
     event_class: Optional[str] = None
-    description: Optional[str] = None
-    raw: Optional[dict] = None
+    description: Optional[str] = Field(None, alias="event_description")
+    raw: Optional[dict] = Field(None, alias="event_data")
 
 
 class ControllerReport(BaseModel):
