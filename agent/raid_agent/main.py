@@ -18,7 +18,7 @@ from pathlib import Path
 
 from raid_agent import __version__
 from raid_agent.config import load_config, save_api_key, DEFAULT_CONFIG_PATH
-from raid_agent.collector import collect_all
+from raid_agent.collector import collect_all, get_storcli_version
 from raid_agent.system_info import get_system_info
 from raid_agent.reporter import (
     register,
@@ -268,6 +268,7 @@ def run_collection_cycle(config, storcli_path):
         "kernel": sys_info.get("kernel", ""),
     }
     report["agent_version"] = __version__
+    report["storcli_version"] = get_storcli_version(storcli_path)
     report["cpu_model"] = sys_info.get("cpu_model", "")
     report["cpu_cores"] = sys_info.get("cpu_cores", 0)
     report["ram_total_gb"] = sys_info.get("ram_total_gb", 0.0)

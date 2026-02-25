@@ -228,32 +228,56 @@ def _get_uptime_seconds() -> float:
 
 
 def _get_last_os_update() -> Optional[str]:
-    """Determine the timestamp of the last OS package update.
+    """Determine the timestamp of the last ``dnf update`` (or yum update).
 
     Tries multiple methods in order:
-        1. `rpm -qa --last | head -1` (RPM-based systems)
-        2. stat /var/lib/dnf/history/ (DNF-based systems)
-        3. stat /var/lib/yum/history/ (YUM-based systems)
+        1. ``dnf history list`` — find the latest update/upgrade transaction
+        2. stat /var/lib/dnf/history/ mtime as fallback
+        3. stat /var/lib/yum/history/ mtime as fallback
 
     Returns:
-        ISO-formatted date string, or None if undetermined.
+        Date string in ``DD.MM.YYYY HH:MM:SS`` format, or None.
     """
-    # Method 1: rpm query
+    from datetime import datetime, timezone
+
+    def _fmt(dt: datetime) -> str:
+        local = dt.astimezone()
+        tz_name = local.strftime("%Z") or "UTC"
+        return local.strftime(f"%d.%m.%Y %H:%M:%S {tz_name}")
+
+    # Method 1: dnf history — look for update/upgrade transactions
     try:
         result = subprocess.run(
-            ["rpm", "-qa", "--last"],
+            ["dnf", "history", "list", "--reverse"],
             capture_output=True,
             text=True,
             timeout=30,
             check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
-            first_line = result.stdout.strip().split("\n")[0]
-            # Format: "package-name   Mon 01 Jan 2024 12:00:00 AM UTC"
-            # The date starts after the package name, typically after multiple spaces
-            parts = re.split(r"\s{2,}", first_line, maxsplit=1)
-            if len(parts) >= 2:
-                return parts[1].strip()
+            last_update_line = None
+            for line in result.stdout.strip().split("\n"):
+                lower = line.lower()
+                if "update" in lower or "upgrade" in lower:
+                    last_update_line = line
+            if last_update_line:
+                # dnf history format: "  ID | Command            | Date and time    | ..."
+                # Date is typically in the 3rd column
+                cols = [c.strip() for c in last_update_line.split("|")]
+                if len(cols) >= 3:
+                    date_str = cols[2].strip()
+                    # Try parsing common dnf date formats
+                    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S",
+                                "%a %b %d %H:%M:%S %Y", "%d %b %Y %H:%M"):
+                        try:
+                            dt = datetime.strptime(date_str, fmt)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc).astimezone()
+                            return _fmt(dt)
+                        except ValueError:
+                            continue
+                    # If parsing failed, return raw date from dnf
+                    return date_str
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
 
@@ -262,9 +286,8 @@ def _get_last_os_update() -> Optional[str]:
         dnf_history = "/var/lib/dnf/history/"
         if os.path.isdir(dnf_history):
             mtime = os.stat(dnf_history).st_mtime
-            from datetime import datetime, timezone
             dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
-            return dt.isoformat()
+            return _fmt(dt)
     except (OSError, ValueError):
         pass
 
@@ -273,9 +296,8 @@ def _get_last_os_update() -> Optional[str]:
         yum_history = "/var/lib/yum/history/"
         if os.path.isdir(yum_history):
             mtime = os.stat(yum_history).st_mtime
-            from datetime import datetime, timezone
             dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
-            return dt.isoformat()
+            return _fmt(dt)
     except (OSError, ValueError):
         pass
 

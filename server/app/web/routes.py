@@ -219,6 +219,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "of": "из",
         "items": "записей",
         "problem": "проблема",
+        "degraded": "деградирован",
+        "failed": "неисправен",
+        "Controller overheating": "Перегрев контроллера",
+        "predictive failure": "предсказанный сбой",
+        "Health": "Состояние",
         "Settings saved successfully.": "Настройки успешно сохранены.",
     },
     "en": {},
@@ -513,6 +518,23 @@ async def dashboard_page(
                     if pd.state and pd.state.lower() in ("online", "onln", "ugood", "jbod", "ghs", "dhs"):
                         pd_ok += 1
 
+            # Build health status summary
+            health_issues = []
+            vd_bad = vd_total - vd_ok
+            pd_bad = pd_total - pd_ok
+            if vd_bad > 0:
+                health_issues.append(f"VD: {vd_bad} " + _("degraded"))
+            if pd_bad > 0:
+                health_issues.append(f"PD: {pd_bad} " + _("failed"))
+            for ctrl in (srv.controllers or []):
+                if ctrl.roc_temperature and ctrl.roc_temperature > 90:
+                    health_issues.append(_("Controller overheating"))
+                for pd in (ctrl.physical_drives or []):
+                    if pd.predictive_failure and str(pd.predictive_failure).lower() not in ("0", "no", "false", ""):
+                        health_issues.append(f"PD {pd.enclosure_id}:{pd.slot_number} " + _("predictive failure"))
+                        break
+            health_status = "; ".join(health_issues) if health_issues else "OK"
+
             servers.append({
                 "id": str(srv.id),
                 "hostname": srv.hostname,
@@ -528,6 +550,7 @@ async def dashboard_page(
                 "vd_ok": vd_ok,
                 "pd_total": pd_total,
                 "pd_ok": pd_ok,
+                "health_status": health_status,
             })
 
             # Accumulate global stats

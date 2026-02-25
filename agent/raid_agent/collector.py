@@ -105,6 +105,27 @@ def _run_storcli_text(storcli_path: str, args: List[str]) -> str:
     return stdout
 
 
+def get_storcli_version(storcli_path: str) -> str:
+    """Get storcli64 version string by running ``storcli64 -v``.
+
+    Returns:
+        Version string (e.g. '007.2705.0000.0000') or empty string on failure.
+    """
+    try:
+        output = _run_storcli_text(storcli_path, ["-v"])
+        # Example: "StorCli SAS Customization Utility Ver 007.2705.0000.0000 August 24, 2023"
+        match = re.search(r"Ver\s+([\d.]+)", output)
+        if match:
+            return match.group(1)
+        # Fallback: return first line that contains version info
+        for line in output.splitlines():
+            if "ver" in line.lower():
+                return line.strip()
+    except Exception as exc:
+        logger.debug("Failed to get storcli version: %s", exc)
+    return ""
+
+
 def _get_response_data(raw: Dict[str, Any], controller_idx: int = 0) -> Dict[str, Any]:
     """Extract Response Data from storcli JSON output.
 
