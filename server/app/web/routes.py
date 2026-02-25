@@ -1390,12 +1390,29 @@ async def api_debug_web_toggle(
         await _save_setting(db, "web_debug_enabled", "true" if enabled else "false", category="debug")
         await db.commit()
 
-    # Apply debug level immediately
+    # Apply debug level to root logger (all components) + SQL
     import logging as _logging
     level = _logging.DEBUG if enabled else _logging.INFO
-    _logging.getLogger("app").setLevel(level)
+    _logging.getLogger().setLevel(level)  # root logger — all components
+    _logging.getLogger("sqlalchemy.engine").setLevel(level)  # SQL queries
+    _logging.getLogger("sqlalchemy.pool").setLevel(level)
+    _logging.getLogger("uvicorn").setLevel(level)
+    _logging.getLogger("uvicorn.error").setLevel(level)
+    # Keep access log at WARNING to avoid spam
+    _logging.getLogger("uvicorn.access").setLevel(_logging.WARNING)
 
-    return {"success": True, "enabled": enabled}
+    # Return HTML status badge for HTMX swap
+    if enabled:
+        badge = (
+            '<span class="badge bg-warning text-dark" id="debug-status-badge">'
+            '<i class="bi bi-bug-fill me-1"></i>DEBUG</span>'
+        )
+    else:
+        badge = (
+            '<span class="badge bg-secondary" id="debug-status-badge">'
+            'INFO</span>'
+        )
+    return HTMLResponse(badge)
 
 
 @router.post("/api/settings/debug/collect-all", include_in_schema=False)
@@ -1595,12 +1612,16 @@ async def api_agent_debug_toggle(
         if not server:
             raise HTTPException(status_code=404, detail="Server not found")
 
+        # Update debug_mode flag on server record
+        server.debug_mode = enabled
+
+        # Send update_config command to agent (agent handles "update_config" type)
         server_info = server.server_info or {}
         pending = server_info.get("pending_commands", [])
         pending.append({
             "id": _secrets.token_hex(8),
-            "type": "set_debug",
-            "enabled": enabled,
+            "type": "update_config",
+            "params": {"debug": enabled},
             "created_at": datetime.utcnow().isoformat(),
         })
         server_info["pending_commands"] = pending

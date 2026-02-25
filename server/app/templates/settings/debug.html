@@ -36,15 +36,23 @@
         <h5 class="card-title mb-0">{{ _('Web Application Debug') }}</h5>
       </div>
       <div class="card-body">
-        <div class="form-check form-switch mb-3">
-          <input class="form-check-input" type="checkbox" id="web_debug_enabled"
-                 {% if settings.web_debug_enabled %}checked{% endif %}
-                 hx-put="/api/settings/debug/web"
-                 hx-swap="none"
-                 hx-vals='js:{"enabled": event.target.checked}'>
-          <label class="form-check-label fw-semibold" for="web_debug_enabled">{{ _('Enable debug logging for web application') }}</label>
+        <div class="d-flex align-items-center mb-3">
+          <div class="form-check form-switch mb-0 me-3">
+            <input class="form-check-input" type="checkbox" id="web_debug_enabled"
+                   {% if settings.web_debug_enabled %}checked{% endif %}
+                   hx-put="/api/settings/debug/web"
+                   hx-target="#debug-status-badge"
+                   hx-swap="outerHTML"
+                   hx-vals='js:{"enabled": event.target.checked}'>
+            <label class="form-check-label fw-semibold" for="web_debug_enabled">{{ _('Enable debug logging for web application') }}</label>
+          </div>
+          {% if settings.web_debug_enabled %}
+          <span class="badge bg-warning text-dark" id="debug-status-badge"><i class="bi bi-bug-fill me-1"></i>DEBUG</span>
+          {% else %}
+          <span class="badge bg-secondary" id="debug-status-badge">INFO</span>
+          {% endif %}
         </div>
-        <p class="text-muted small mb-0">{{ _('When enabled, the web application will log detailed debug information. This may impact performance.') }}</p>
+        <p class="text-muted small mb-0">{{ _('When enabled, the web application will log detailed debug information including SQL queries. This may impact performance.') }}</p>
       </div>
     </div>
 

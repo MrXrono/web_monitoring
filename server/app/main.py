@@ -200,6 +200,28 @@ async def seed_default_settings():
         await db.commit()
 
 
+async def restore_debug_level():
+    """Restore debug logging level from DB setting on startup."""
+    from app.models.setting import Setting
+
+    try:
+        async with async_session() as db:
+            result = await db.execute(
+                select(Setting).where(Setting.key == "web_debug_enabled")
+            )
+            setting = result.scalar_one_or_none()
+            if setting and setting.value and setting.value.lower() in ("true", "1"):
+                logging.getLogger().setLevel(logging.DEBUG)
+                logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)
+                logging.getLogger("sqlalchemy.pool").setLevel(logging.DEBUG)
+                logging.getLogger("uvicorn").setLevel(logging.DEBUG)
+                logging.getLogger("uvicorn.error").setLevel(logging.DEBUG)
+                logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+                logger.info("Restored DEBUG logging level from saved settings")
+    except Exception as e:
+        logger.warning("Could not restore debug level: %s", e)
+
+
 async def migrate_add_columns():
     """Add new columns to existing tables (create_all doesn't ALTER existing tables)."""
     _columns = [
@@ -340,6 +362,7 @@ async def lifespan(app: FastAPI):
 
     await create_initial_admin()
     await seed_default_settings()
+    await restore_debug_level()
     await seed_alert_rules()
     await register_prebuilt_packages()
 

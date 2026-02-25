@@ -376,6 +376,11 @@ def _execute_command(cmd, config):
             if key in safe_keys:
                 config[key] = value
                 logger.info("Config updated: %s = %s", key, value)
+                # Apply debug mode change immediately
+                if key == "debug":
+                    new_level = logging.DEBUG if value else logging.INFO
+                    logging.getLogger("raid_agent").setLevel(new_level)
+                    logger.info("Log level changed to %s", logging.getLevelName(new_level))
             else:
                 logger.warning("Refusing to update unsafe config key: %s", key)
 
