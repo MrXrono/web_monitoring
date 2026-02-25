@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
 import bcrypt as _bcrypt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -372,6 +372,7 @@ async def get_agent_config(
 
 @router.get("/update/check", response_model=AgentUpdateCheckResponse)
 async def check_agent_update(
+    request: Request,
     server: Server = Depends(verify_agent_key),
     db: AsyncSession = Depends(get_db),
 ):
@@ -393,13 +394,18 @@ async def check_agent_update(
 
     # Compare versions using semver-like parsing
     update_available = False
-    if server.agent_version and current_pkg.version != server.agent_version:
+    agent_ver_str = server.agent_version or "0.0.0"
+    if current_pkg.version != agent_ver_str:
         try:
-            server_ver = tuple(int(p) for p in (server.agent_version or "0").split("."))
+            agent_ver = tuple(int(p) for p in agent_ver_str.split("."))
             pkg_ver = tuple(int(p) for p in current_pkg.version.split("."))
-            update_available = pkg_ver > server_ver
+            update_available = pkg_ver > agent_ver
         except (ValueError, AttributeError):
-            update_available = current_pkg.version != server.agent_version
+            update_available = current_pkg.version != agent_ver_str
+
+    # Build absolute download URL so the agent can use it directly
+    base_url = str(request.base_url).rstrip("/")
+    download_url = f"{base_url}/api/v1/agent/update/download"
 
     return AgentUpdateCheckResponse(
         latest_version=current_pkg.version,
@@ -408,7 +414,7 @@ async def check_agent_update(
         sha256=current_pkg.file_hash_sha256,
         # Fields required by agent updater.py
         version=current_pkg.version,
-        download_url=f"/api/v1/agent/update/download",
+        download_url=download_url,
         size=current_pkg.file_size,
     )
 
