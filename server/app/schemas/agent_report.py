@@ -154,3 +154,7 @@ class AgentUpdateCheckResponse(BaseModel):
     current_version: Optional[str] = None
     update_available: bool = False
     sha256: Optional[str] = None
+    # Fields expected by agent updater.py
+    version: Optional[str] = None  # alias of latest_version for agent compatibility
+    download_url: Optional[str] = None
+    size: Optional[int] = None

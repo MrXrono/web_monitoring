@@ -391,15 +391,25 @@ async def check_agent_update(
             update_available=False,
         )
 
+    # Compare versions using semver-like parsing
     update_available = False
     if server.agent_version and current_pkg.version != server.agent_version:
-        update_available = True
+        try:
+            server_ver = tuple(int(p) for p in (server.agent_version or "0").split("."))
+            pkg_ver = tuple(int(p) for p in current_pkg.version.split("."))
+            update_available = pkg_ver > server_ver
+        except (ValueError, AttributeError):
+            update_available = current_pkg.version != server.agent_version
 
     return AgentUpdateCheckResponse(
         latest_version=current_pkg.version,
         current_version=server.agent_version,
         update_available=update_available,
         sha256=current_pkg.file_hash_sha256,
+        # Fields required by agent updater.py
+        version=current_pkg.version,
+        download_url=f"/api/v1/agent/update/download",
+        size=current_pkg.file_size,
     )
 
 
