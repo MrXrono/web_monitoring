@@ -188,6 +188,15 @@ async def _upsert_controller(
     ctrl.patrol_read_status = ctrl_data.get("patrol_read_status")
     ctrl.cc_status = ctrl_data.get("cc_status")
     ctrl.alarm_status = ctrl_data.get("alarm_status")
+    ctrl.host_interface = ctrl_data.get("host_interface")
+    ctrl.product_name = ctrl_data.get("product_name")
+    ctrl.supported_raid_levels = ctrl_data.get("supported_raid_levels")
+    ctrl.next_cc_launch = ctrl_data.get("next_cc_launch")
+    ctrl.next_pr_launch = ctrl_data.get("next_pr_launch")
+    ctrl.next_battery_learn = ctrl_data.get("next_battery_learn")
+    ctrl.ecc_bucket_count = ctrl_data.get("ecc_bucket_count", 0) or 0
+    ctrl.firmware_package_build = ctrl_data.get("firmware_package_build")
+    ctrl.driver_name = ctrl_data.get("driver_name")
     ctrl.raw_data = ctrl_data.get("raw_data")
 
     await db.flush()
@@ -221,6 +230,9 @@ async def _upsert_bbu(
     bbu.design_capacity = bbu_data.get("design_capacity")
     bbu.remaining_capacity = bbu_data.get("remaining_capacity")
     bbu.replacement_needed = bool(bbu_data.get("replacement_needed", False))
+    bbu.capacitance = bbu_data.get("capacitance")
+    bbu.pack_energy = bbu_data.get("pack_energy")
+    bbu.flash_size = bbu_data.get("flash_size")
     bbu.raw_data = bbu_data.get("raw_data")
 
     next_learn = bbu_data.get("next_learn_time")
@@ -277,6 +289,9 @@ async def _upsert_virtual_drive(
     vd.disk_cache_policy = vd_data.get("disk_cache_policy")
     vd.consistent = vd_data.get("consistent")
     vd.access = vd_data.get("access")
+    vd.active_operations = vd_data.get("active_operations")
+    vd.write_cache = vd_data.get("write_cache")
+    vd.span_depth = vd_data.get("span_depth")
     vd.raw_data = vd_data.get("raw_data")
 
     await db.flush()
@@ -331,6 +346,10 @@ async def _upsert_physical_drive(
     pd.other_error_count = pd_data.get("other_error_count", 0) or 0
     pd.predictive_failure = pd_data.get("predictive_failure", 0) or 0
     pd.smart_alert = bool(pd_data.get("smart_alert", False))
+    pd.link_speed = pd_data.get("link_speed")
+    pd.device_speed = pd_data.get("device_speed")
+    pd.physical_sector_size = pd_data.get("physical_sector_size")
+    pd.wwn = pd_data.get("wwn")
     pd.smart_data = pd_data.get("smart_data")
     pd.pd_raw_data = pd_data.get("raw_data")
 

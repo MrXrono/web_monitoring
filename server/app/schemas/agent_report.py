@@ -28,6 +28,10 @@ class BbuReport(BaseModel):
     replacement_needed: Optional[bool] = False
     learn_cycle_status: Optional[str] = None
     remaining_capacity: Optional[str] = None
+    capacitance: Optional[str] = None
+    pack_energy: Optional[str] = None
+    manufacture_date: Optional[str] = None
+    flash_size: Optional[str] = None
     raw: Optional[dict] = None
 
 
@@ -46,6 +50,9 @@ class VdReport(BaseModel):
     disk_cache: Optional[str] = None
     consistent: Optional[bool] = None
     access: Optional[str] = None
+    active_operations: Optional[str] = None
+    write_cache: Optional[str] = None
+    span_depth: Optional[int] = None
     raw: Optional[dict] = None
 
 
@@ -67,6 +74,10 @@ class PdReport(BaseModel):
     other_error_count: Optional[int] = 0
     predictive_failure: Optional[int] = 0
     smart_alert: Optional[bool] = False
+    link_speed: Optional[str] = None
+    device_speed: Optional[str] = None
+    physical_sector_size: Optional[str] = None
+    wwn: Optional[str] = None
     smart: Optional[dict] = None
     raw: Optional[dict] = None
 
@@ -98,6 +109,15 @@ class ControllerReport(BaseModel):
     patrol_read_status: Optional[str] = None
     cc_status: Optional[str] = None
     alarm_status: Optional[str] = None
+    host_interface: Optional[str] = None
+    product_name: Optional[str] = None
+    supported_raid_levels: Optional[list] = None
+    next_cc_launch: Optional[str] = None
+    next_pr_launch: Optional[str] = None
+    next_battery_learn: Optional[str] = None
+    ecc_bucket_count: Optional[int] = 0
+    firmware_package_build: Optional[str] = None
+    driver_name: Optional[str] = None
     bbu: Optional[BbuReport] = None
     virtual_drives: list[VdReport] = []
     physical_drives: list[PdReport] = []

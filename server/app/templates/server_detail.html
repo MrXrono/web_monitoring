@@ -377,10 +377,11 @@ document.addEventListener('DOMContentLoaded', function() {
         <table class="table table-sm table-borderless mb-0">
           <tr><td class="text-muted">{{ _('Serial') }}:</td><td class="fw-semibold">{{ ctrl.serial | default('N/A') }}</td></tr>
           <tr><td class="text-muted">{{ _('Firmware') }}:</td><td class="fw-semibold">{{ ctrl.firmware | default('N/A') }}</td></tr>
-          <tr><td class="text-muted">{{ _('Rebuild Rate') }}:</td><td class="fw-semibold">{{ ctrl.rebuild_rate | default('N/A') }}%</td></tr>
-          <tr><td class="text-muted">{{ _('Patrol Read') }}:</td><td class="fw-semibold">{{ ctrl.patrol_read | default('N/A') }}</td></tr>
-          <tr><td class="text-muted">{{ _('CC Status') }}:</td><td class="fw-semibold">{{ ctrl.cc_status | default('N/A') }}</td></tr>
-          <tr><td class="text-muted">{{ _('Alarm') }}:</td><td class="fw-semibold">{{ ctrl.alarm | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('BIOS') }}:</td><td class="fw-semibold small">{{ ctrl.bios_version | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Driver') }}:</td><td class="fw-semibold">{{ ctrl.driver_name | default('') }} {{ ctrl.driver_version | default('') }}</td></tr>
+          <tr><td class="text-muted">{{ _('FW Package') }}:</td><td class="fw-semibold">{{ ctrl.firmware_package_build | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Interface') }}:</td><td class="fw-semibold">{{ ctrl.host_interface | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('RAID Levels') }}:</td><td class="fw-semibold small">{{ ctrl.supported_raid_levels | join(', ') if ctrl.supported_raid_levels else 'N/A' }}</td></tr>
         </table>
       </div>
       <div class="col-md-6">
@@ -397,13 +398,32 @@ document.addEventListener('DOMContentLoaded', function() {
                  style="width: {{ [ctrl.temperature if ctrl.temperature is not none else 0, 100] | min }}%"></div>
           </div>
         </div>
-        <!-- Memory -->
+        <!-- Memory & Status -->
         <table class="table table-sm table-borderless mb-0">
           <tr><td class="text-muted">{{ _('Memory') }}:</td><td class="fw-semibold">{{ ctrl.memory_size | default('N/A') }}</td></tr>
           <tr><td class="text-muted">{{ _('Correctable Errors') }}:</td><td class="fw-semibold">{{ ctrl.memory_correctable_errors | default(0) }}</td></tr>
           <tr><td class="text-muted">{{ _('Uncorrectable Errors') }}:</td><td class="fw-semibold {% if ctrl.memory_uncorrectable_errors is defined and ctrl.memory_uncorrectable_errors is not none and ctrl.memory_uncorrectable_errors > 0 %}text-danger{% endif %}">{{ ctrl.memory_uncorrectable_errors | default(0) }}</td></tr>
+          <tr><td class="text-muted">{{ _('ECC Bucket Count') }}:</td><td class="fw-semibold {% if ctrl.ecc_bucket_count is defined and ctrl.ecc_bucket_count > 0 %}text-warning{% endif %}">{{ ctrl.ecc_bucket_count | default(0) }}</td></tr>
+          <tr><td class="text-muted">{{ _('Rebuild Rate') }}:</td><td class="fw-semibold">{{ ctrl.rebuild_rate | default('N/A') }}%</td></tr>
+          <tr><td class="text-muted">{{ _('Patrol Read') }}:</td><td class="fw-semibold">{{ ctrl.patrol_read | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('CC Status') }}:</td><td class="fw-semibold">{{ ctrl.cc_status | default('N/A') }}</td></tr>
+          <tr><td class="text-muted">{{ _('Alarm') }}:</td><td class="fw-semibold">{{ ctrl.alarm | default('N/A') }}</td></tr>
         </table>
       </div>
+    </div>
+    <!-- Scheduled Tasks -->
+    {% if ctrl.next_cc_launch or ctrl.next_pr_launch or ctrl.next_battery_learn %}
+    <div class="card bg-light border mt-3">
+      <div class="card-body p-3">
+        <h6 class="card-title small fw-bold mb-2">{{ _('Scheduled Tasks') }}</h6>
+        <div class="row g-2">
+          {% if ctrl.next_cc_launch %}<div class="col-auto"><small class="text-muted">{{ _('Next CC') }}:</small> <strong class="small">{{ ctrl.next_cc_launch }}</strong></div>{% endif %}
+          {% if ctrl.next_pr_launch %}<div class="col-auto"><small class="text-muted">{{ _('Next PR') }}:</small> <strong class="small">{{ ctrl.next_pr_launch }}</strong></div>{% endif %}
+          {% if ctrl.next_battery_learn %}<div class="col-auto"><small class="text-muted">{{ _('Next Battery Learn') }}:</small> <strong class="small">{{ ctrl.next_battery_learn }}</strong></div>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
     </div>
     <!-- BBU / CacheVault -->
     {% if ctrl.bbu is defined %}
@@ -418,10 +438,15 @@ document.addEventListener('DOMContentLoaded', function() {
           BBU / CacheVault
         </h6>
         <div class="row g-2">
-          <div class="col-auto"><small class="text-muted">{{ _('Status') }}:</small> <span class="badge {% if ctrl.bbu.status == 'Optimal' or ctrl.bbu.status == 'Opt' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ ctrl.bbu.status | default('N/A') }}</span></div>
+          <div class="col-auto"><small class="text-muted">{{ _('Status') }}:</small> <span class="badge {% if ctrl.bbu.status == 'Optimal' or ctrl.bbu.status == 'Opt' %}bg-success{% elif ctrl.bbu.replacement_needed %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ ctrl.bbu.status | default('N/A') }}</span></div>
           <div class="col-auto"><small class="text-muted">{{ _('Type') }}:</small> <strong class="small">{{ ctrl.bbu.type | default('N/A') }}</strong></div>
           <div class="col-auto"><small class="text-muted">{{ _('Temp') }}:</small> <strong class="small">{{ ctrl.bbu.temperature | default('N/A') }} C</strong></div>
           <div class="col-auto"><small class="text-muted">{{ _('Charge') }}:</small> <strong class="small">{{ ctrl.bbu.charge | default('N/A') }}</strong></div>
+          {% if ctrl.bbu.capacitance %}<div class="col-auto"><small class="text-muted">{{ _('Capacitance') }}:</small> <strong class="small">{{ ctrl.bbu.capacitance }}</strong></div>{% endif %}
+          {% if ctrl.bbu.pack_energy %}<div class="col-auto"><small class="text-muted">{{ _('Pack Energy') }}:</small> <strong class="small">{{ ctrl.bbu.pack_energy }}</strong></div>{% endif %}
+          {% if ctrl.bbu.flash_size %}<div class="col-auto"><small class="text-muted">{{ _('Flash') }}:</small> <strong class="small">{{ ctrl.bbu.flash_size }}</strong></div>{% endif %}
+          {% if ctrl.bbu.manufacture_date %}<div class="col-auto"><small class="text-muted">{{ _('Mfg Date') }}:</small> <strong class="small">{{ ctrl.bbu.manufacture_date }}</strong></div>{% endif %}
+          {% if ctrl.bbu.replacement_needed %}<div class="col-auto"><span class="badge bg-danger">{{ _('Replacement Required') }}</span></div>{% endif %}
         </div>
       </div>
     </div>
@@ -456,9 +481,10 @@ document.addEventListener('DOMContentLoaded', function() {
             <th>{{ _('State') }}</th>
             <th>{{ _('Size') }}</th>
             <th>{{ _('Cache') }}</th>
-            <th>IO</th>
-            <th>{{ _('Read') }}</th>
+            <th>{{ _('Write Cache') }}</th>
             <th>{{ _('Drives') }}</th>
+            <th>{{ _('Spans') }}</th>
+            <th>{{ _('Active Ops') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -479,9 +505,16 @@ document.addEventListener('DOMContentLoaded', function() {
             </td>
             <td class="text-nowrap">{{ vd.size | default('N/A') }}</td>
             <td>{{ vd.cache | default('N/A') }}</td>
-            <td>{{ vd.io_policy | default('N/A') }}</td>
-            <td>{{ vd.read_policy | default('N/A') }}</td>
+            <td>{{ vd.write_cache | default('N/A') }}</td>
             <td>{{ vd.drives_count | default(0) }}</td>
+            <td>{{ vd.span_depth | default('') }}</td>
+            <td>
+              {% if vd.active_operations and vd.active_operations != 'None' %}
+              <span class="badge bg-info text-dark">{{ vd.active_operations }}</span>
+              {% else %}
+              <span class="text-muted small">None</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -517,6 +550,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <th>{{ _('Model') }}</th>
             <th>{{ _('Type') }}</th>
             <th>{{ _('Interface') }}</th>
+            <th>{{ _('Speed') }}</th>
             <th>{{ _('Temp') }}</th>
             <th title="{{ _('Media Errors') }}">Med Err</th>
             <th title="{{ _('Other Errors') }}">Oth Err</th>
@@ -533,7 +567,7 @@ document.addEventListener('DOMContentLoaded', function() {
               hx-swap="innerHTML"
               data-bs-toggle="modal"
               data-bs-target="#smartModal"
-              title="{{ _('Click for SMART details') }}">
+              title="{% if pd.wwn %}WWN: {{ pd.wwn }}  {% endif %}{% if pd.serial %}S/N: {{ pd.serial }}  {% endif %}{% if pd.physical_sector_size %}Phys Sector: {{ pd.physical_sector_size }}{% endif %}">
             <td class="fw-semibold">{{ pd.eid | default('') }}:{{ pd.slot | default('') }}</td>
             <td>
               <span class="badge
@@ -547,9 +581,10 @@ document.addEventListener('DOMContentLoaded', function() {
             </td>
             <td>{{ pd.dg | default('') }}</td>
             <td class="text-nowrap">{{ pd.size | default('N/A') }}</td>
-            <td class="small">{{ pd.model | default('N/A') }}</td>
+            <td class="small" title="{% if pd.firmware %}FW: {{ pd.firmware }}{% endif %}">{{ pd.model | default('N/A') }}</td>
             <td>{{ pd.media_type | default('N/A') }}</td>
             <td>{{ pd.interface | default('N/A') }}</td>
+            <td class="small text-nowrap" title="{{ _('Link') }}: {{ pd.link_speed | default('N/A') }} / {{ _('Device') }}: {{ pd.device_speed | default('N/A') }}">{{ pd.link_speed | default('') }}</td>
             <td>
               <span class="{% if pd.temperature is defined and pd.temperature is not none and pd.temperature > 50 %}text-danger fw-bold{% elif pd.temperature is defined and pd.temperature is not none and pd.temperature > 40 %}text-warning{% endif %}">
                 {{ pd.temperature | default('N/A') }}{% if pd.temperature is defined and pd.temperature is not none %} C{% endif %}

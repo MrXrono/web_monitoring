@@ -664,12 +664,19 @@ async def server_detail_page(
                 "type": ctrl.bbu.bbu_type or "N/A",
                 "temperature": ctrl.bbu.temperature,
                 "charge": ctrl.bbu.remaining_capacity or "N/A",
+                "capacitance": ctrl.bbu.capacitance or "",
+                "pack_energy": ctrl.bbu.pack_energy or "",
+                "manufacture_date": ctrl.bbu.manufacture_date or "",
+                "flash_size": ctrl.bbu.flash_size or "",
+                "replacement_needed": ctrl.bbu.replacement_needed,
             }
         controllers_list.append({
             "id": ctrl.controller_id,
             "model": ctrl.model,
             "serial": ctrl.serial_number,
             "firmware": ctrl.firmware_version,
+            "bios_version": ctrl.bios_version,
+            "driver_version": ctrl.driver_version,
             "status": ctrl.status,
             "temperature": ctrl.roc_temperature,
             "rebuild_rate": ctrl.rebuild_rate,
@@ -679,6 +686,15 @@ async def server_detail_page(
             "memory_size": ctrl.memory_size,
             "memory_correctable_errors": ctrl.memory_correctable_errors or 0,
             "memory_uncorrectable_errors": ctrl.memory_uncorrectable_errors or 0,
+            "host_interface": ctrl.host_interface or "",
+            "product_name": ctrl.product_name or "",
+            "supported_raid_levels": ctrl.supported_raid_levels or [],
+            "next_cc_launch": ctrl.next_cc_launch or "",
+            "next_pr_launch": ctrl.next_pr_launch or "",
+            "next_battery_learn": ctrl.next_battery_learn or "",
+            "ecc_bucket_count": ctrl.ecc_bucket_count or 0,
+            "firmware_package_build": ctrl.firmware_package_build or "",
+            "driver_name": ctrl.driver_name or "",
             "bbu": bbu_info,
         })
 
@@ -722,6 +738,9 @@ async def server_detail_page(
             "raid_type": vd.raid_type, "state": vd.state, "size": vd.size,
             "cache": vd.cache_policy, "io_policy": vd.io_policy,
             "read_policy": vd.read_policy, "drives_count": vd.number_of_drives or 0,
+            "active_operations": vd.active_operations or "None",
+            "write_cache": vd.write_cache or "",
+            "span_depth": vd.span_depth,
         })
 
     # Build PD list for template
@@ -730,10 +749,15 @@ async def server_detail_page(
         physical_drives.append({
             "eid": pd.enclosure_id, "slot": pd.slot_number, "dg": pd.drive_group,
             "state": pd.state, "size": pd.size, "model": pd.model,
+            "serial": pd.serial_number, "firmware": pd.firmware_version,
             "media_type": pd.media_type, "interface": pd.interface_type,
             "temperature": pd.temperature, "media_errors": pd.media_error_count,
             "other_errors": pd.other_error_count, "predictive_failure": pd.predictive_failure,
             "smart_alert": pd.smart_alert,
+            "link_speed": pd.link_speed or "",
+            "device_speed": pd.device_speed or "",
+            "physical_sector_size": pd.physical_sector_size or "",
+            "wwn": pd.wwn or "",
         })
 
     ctx = _base_context(
