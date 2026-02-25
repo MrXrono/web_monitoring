@@ -217,6 +217,10 @@ async def restore_debug_level():
                 logging.getLogger("uvicorn").setLevel(logging.DEBUG)
                 logging.getLogger("uvicorn.error").setLevel(logging.DEBUG)
                 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+                # Suppress noisy HTTP client internals
+                logging.getLogger("httpcore").setLevel(logging.WARNING)
+                logging.getLogger("httpx").setLevel(logging.WARNING)
+                logging.getLogger("hpack").setLevel(logging.WARNING)
                 logger.info("Restored DEBUG logging level from saved settings")
     except Exception as e:
         logger.warning("Could not restore debug level: %s", e)

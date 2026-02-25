@@ -1400,6 +1400,10 @@ async def api_debug_web_toggle(
     _logging.getLogger("uvicorn.error").setLevel(level)
     # Keep access log at WARNING to avoid spam
     _logging.getLogger("uvicorn.access").setLevel(_logging.WARNING)
+    # Suppress noisy HTTP client internals (they expose internal IPs)
+    _logging.getLogger("httpcore").setLevel(_logging.WARNING)
+    _logging.getLogger("httpx").setLevel(_logging.WARNING)
+    _logging.getLogger("hpack").setLevel(_logging.WARNING)
 
     # Return HTML status badge for HTMX swap
     if enabled:
