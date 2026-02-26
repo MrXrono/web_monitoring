@@ -231,11 +231,35 @@ def collect_drive_smart(smartctl_path: str, device: str, dev_type: str = "", sca
     }
 
 
+# Keywords indicating a RAID controller virtual drive (not a real physical disk)
+_RAID_VD_KEYWORDS = ("avago", "lsi", "megaraid", "perc", "broadcom", "dell")
+
+
+def _is_raid_virtual_drive(smart_data: Dict[str, Any]) -> bool:
+    """Check if smartctl output belongs to a RAID controller virtual drive.
+
+    MegaRAID VDs are exposed as /dev/sdX (SCSI) but smartctl cannot
+    read real SMART data from them — vendor/product identifies the controller.
+    """
+    raw = smart_data.get("smart_data") or {}
+    check_fields = [
+        raw.get("vendor", ""),
+        raw.get("product", ""),
+        raw.get("scsi_vendor", ""),
+        raw.get("scsi_product", ""),
+        raw.get("scsi_model_name", ""),
+        smart_data.get("model", ""),
+    ]
+    combined = " ".join(str(f) for f in check_fields).lower()
+    return any(kw in combined for kw in _RAID_VD_KEYWORDS)
+
+
 def collect_all_smart(smartctl_path: str) -> List[Dict[str, Any]]:
     """Scan all drives and collect SMART data for each.
 
     Drives managed by a hardware RAID controller (MegaRAID passthrough)
     are excluded — they are already reported via storcli64.
+    RAID controller virtual drives exposed as SCSI devices are also excluded.
 
     Args:
         smartctl_path: Path to smartctl binary.
@@ -258,11 +282,15 @@ def collect_all_smart(smartctl_path: str) -> List[Dict[str, Any]]:
         try:
             report = collect_drive_smart(smartctl_path, drv["device"], drv.get("type", ""), scan_type=drv.get("type", ""))
             if report:
+                if _is_raid_virtual_drive(report):
+                    skipped += 1
+                    logger.debug("Skipping RAID controller VD: %s", drv["device"])
+                    continue
                 results.append(report)
         except Exception:
             logger.warning("Failed to collect SMART for %s", drv["device"], exc_info=True)
 
-    logger.info("Collected SMART data for %d/%d drives (skipped %d MegaRAID)", len(results), len(drives), skipped)
+    logger.info("Collected SMART data for %d/%d drives (skipped %d RAID)", len(results), len(drives), skipped)
     return results
 
 
