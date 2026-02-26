@@ -12,7 +12,9 @@ RUN http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" all_p
     apt-get update && \
     http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" all_proxy="" \
     apt-get install -y --no-install-recommends \
-    python3 python3-pip python3-dev libpq-dev gcc curl && \
+    python3 python3-pip python3-dev libpq-dev gcc curl tzdata && \
+    ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime && \
+    echo "Europe/Moscow" > /etc/timezone && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
