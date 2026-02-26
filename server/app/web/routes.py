@@ -1872,6 +1872,7 @@ async def server_controllers_partial(
     from app.database import async_session
     from app.models.controller import Controller
     from app.models.bbu import BbuUnit
+    from app.models.software_raid import SoftwareRaid
     from sqlalchemy.orm import selectinload
 
     lang = _get_lang(request)
@@ -1886,7 +1887,14 @@ async def server_controllers_partial(
         )
         ctrls = result.scalars().all()
 
-    if not ctrls:
+        sr_result = await db.execute(
+            select(SoftwareRaid)
+            .where(SoftwareRaid.server_id == server_id)
+            .order_by(SoftwareRaid.array_name)
+        )
+        raids = sr_result.scalars().all()
+
+    if not ctrls and not raids:
         return HTMLResponse(
             f'<div class="text-center py-5 text-muted">'
             f'<p>{_("No controllers found for this server.")}</p></div>'
@@ -1999,6 +2007,107 @@ async def server_controllers_partial(
             </div>
             {sched_html}
             {bbu_html}
+          </div>
+        </div>''')
+
+    # --- Software RAID card ---
+    if raids:
+        total_devs = sum(sr.num_devices or 0 for sr in raids)
+        active_devs = sum(sr.active_devices or 0 for sr in raids)
+        failed_devs = sum(sr.failed_devices or 0 for sr in raids)
+        spare_devs = sum(sr.spare_devices or 0 for sr in raids)
+        any_degraded = any(
+            (sr.state or "").lower() in ("degraded", "inactive", "rebuilding", "recovering")
+            for sr in raids
+        )
+        overall_badge = "bg-danger" if any_degraded else "bg-success"
+        overall_state = _("Degraded") if any_degraded else _("Active")
+
+        # Arrays list
+        arrays_rows = []
+        for sr in raids:
+            sr_state_lower = (sr.state or "").lower()
+            if sr_state_lower in ("active", "clean"):
+                sr_badge = "bg-success"
+            elif sr_state_lower in ("degraded", "inactive"):
+                sr_badge = "bg-danger"
+            elif sr_state_lower in ("rebuilding", "recovering", "resyncing"):
+                sr_badge = "bg-warning text-dark"
+            else:
+                sr_badge = "bg-secondary"
+            failed_cls = " text-danger fw-bold" if (sr.failed_devices or 0) > 0 else ""
+            rebuild_str = ""
+            if sr.rebuild_progress is not None:
+                pct = min(sr.rebuild_progress, 100)
+                rebuild_str = f'''<div class="progress d-inline-flex" style="height: 14px; width: 80px; vertical-align: middle;">
+                    <div class="progress-bar bg-info" style="width: {pct:.1f}%"></div></div>
+                    <small class="ms-1">{pct:.1f}%</small>'''
+            arrays_rows.append(f'''<tr>
+              <td class="fw-semibold">{sr.array_name}</td>
+              <td>{sr.raid_level or "N/A"}</td>
+              <td><span class="badge {sr_badge}">{sr.state or "N/A"}</span></td>
+              <td class="text-nowrap">{sr.array_size or "N/A"}</td>
+              <td>{sr.active_devices if sr.active_devices is not None else "?"}/{sr.num_devices if sr.num_devices is not None else "?"}</td>
+              <td class="{failed_cls}">{sr.failed_devices or 0}</td>
+              <td>{sr.spare_devices or 0}</td>
+              <td>{rebuild_str}</td>
+            </tr>''')
+
+        # Member devices sub-card
+        members_html = ""
+        all_members = []
+        for sr in raids:
+            for m in (sr.member_devices or []):
+                m_dev = m.get("device", "?")
+                m_state = (m.get("state") or "").lower()
+                m_array = sr.array_name
+                all_members.append((m_dev, m_state, m_array))
+        if all_members:
+            mem_badges = []
+            for m_dev, m_state, m_array in all_members:
+                if m_state == "faulty":
+                    mem_badges.append(f'<span class="badge bg-danger me-1 mb-1" title="{m_array}">{m_dev}</span>')
+                elif m_state == "spare":
+                    mem_badges.append(f'<span class="badge bg-info text-dark me-1 mb-1" title="{m_array}">{m_dev}</span>')
+                else:
+                    mem_badges.append(f'<span class="badge bg-success me-1 mb-1" title="{m_array}">{m_dev}</span>')
+            members_html = f'''
+            <div class="card bg-light border mt-3"><div class="card-body p-3">
+              <h6 class="card-title small fw-bold mb-2">{_("Member Devices")}</h6>
+              <div>{"".join(mem_badges)}</div>
+            </div></div>'''
+
+        html_parts.append(f'''
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">{_("Software RAID")} (mdadm)</h6>
+            <span class="badge {overall_badge}">{overall_state}</span>
+          </div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <table class="table table-sm table-borderless mb-0">
+                  <tr><td class="text-muted">{_("Arrays")}:</td><td class="fw-semibold">{len(raids)}</td></tr>
+                  <tr><td class="text-muted">{_("Total Devices")}:</td><td class="fw-semibold">{total_devs}</td></tr>
+                  <tr><td class="text-muted">{_("Active Devices")}:</td><td class="fw-semibold">{active_devs}</td></tr>
+                  <tr><td class="text-muted">{_("Failed Devices")}:</td><td class="fw-semibold{"  text-danger" if failed_devs > 0 else ""}">{failed_devs}</td></tr>
+                  <tr><td class="text-muted">{_("Spare Devices")}:</td><td class="fw-semibold">{spare_devs}</td></tr>
+                </table>
+              </div>
+              <div class="col-md-6">
+                <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="table-light"><tr>
+                    <th>{_("Array")}</th><th>{_("Level")}</th><th>{_("State")}</th>
+                    <th>{_("Size")}</th><th>{_("Drives")}</th><th>{_("Failed")}</th>
+                    <th>{_("Spare")}</th><th>{_("Rebuild")}</th>
+                  </tr></thead>
+                  <tbody>{"".join(arrays_rows)}</tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+            {members_html}
           </div>
         </div>''')
 
