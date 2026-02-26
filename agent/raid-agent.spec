@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.6
+%define version     1.0.7
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -109,8 +109,11 @@ fi
 # Install the agent package itself
 cd %{install_dir} && %{install_dir}/venv/bin/pip install -e . 2>/dev/null || true
 
-# Create symlink for raid-agent command
+# Create symlinks for raid-agent command
+# /usr/local/bin — for regular users
+# /usr/sbin — for sudo (secure_path does not include /usr/local/bin)
 ln -sf %{install_dir}/venv/bin/raid-agent /usr/local/bin/raid-agent
+ln -sf %{install_dir}/venv/bin/raid-agent /usr/sbin/raid-agent
 
 # Build and install SELinux policy module if semodule is available
 if command -v semodule >/dev/null 2>&1 && [ -f %{selinux_dir}/raid-agent.te ]; then
@@ -167,8 +170,9 @@ if [ $1 -ge 1 ]; then
 fi
 
 if [ $1 -eq 0 ]; then
-    # Full uninstall: clean up virtualenv and symlink
+    # Full uninstall: clean up virtualenv and symlinks
     rm -f /usr/local/bin/raid-agent 2>/dev/null || true
+    rm -f /usr/sbin/raid-agent 2>/dev/null || true
     rm -rf %{install_dir}/venv 2>/dev/null || true
     rm -rf %{install_dir}/__pycache__ 2>/dev/null || true
     rm -rf %{install_dir}/raid_agent/__pycache__ 2>/dev/null || true
@@ -206,6 +210,9 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.7-1
+- Fix: sudo raid-agent not found — add symlink to /usr/sbin for secure_path compatibility
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.6-1
 - Fix: updater SSL verification — now trusts self-signed certs (same as reporter)
 - Update check failures now logged at WARNING level (were DEBUG — invisible)
