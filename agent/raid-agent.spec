@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.1
+%define version     1.1.2
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -313,6 +313,10 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.2-1
+- Add: auto-cleanup of old agent logs (>7 days) on upload and collection
+- Add: "Log Request Status" table on debug settings page
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.1-1
 - Fix: self-update SHA256 mismatch — server now refreshes hash on RPM rebuild
 - Fix: self-update signal 15 — deferred restart in %%post, removed explicit restart from updater

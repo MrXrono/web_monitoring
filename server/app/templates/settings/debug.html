@@ -136,6 +136,71 @@
       </div>
     </div>
 
+    <!-- Log Request Status -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white">
+        <h5 class="card-title mb-0">{{ _('Log Request Status') }}</h5>
+      </div>
+      <div class="card-body p-0">
+        {% if log_status is defined and log_status | length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-hover table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>{{ _('Server') }}</th>
+                <th>{{ _('Request Status') }}</th>
+                <th>{{ _('Request Time') }}</th>
+                <th>{{ _('Files on Server') }}</th>
+                <th>{{ _('Latest Log') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in log_status %}
+              <tr>
+                <td>
+                  <a href="/servers/{{ item.server_id }}" class="text-decoration-none fw-semibold">{{ item.hostname | default('Unknown') }}</a>
+                  <br><small class="text-muted">{{ item.ip | default('') }}</small>
+                </td>
+                <td>
+                  {% if item.log_request_status == 'pending' %}
+                  <span class="badge bg-warning text-dark">
+                    <span class="spinner-border spinner-border-sm me-1" style="width: 0.6rem; height: 0.6rem;" role="status"></span>
+                    {{ _('Waiting') }}
+                  </span>
+                  {% elif item.log_request_status == 'completed' %}
+                  <span class="badge bg-success">{{ _('Received') }}</span>
+                  {% else %}
+                  <span class="badge bg-secondary">{{ _('Not requested') }}</span>
+                  {% endif %}
+                </td>
+                <td class="small text-muted">
+                  {% if item.log_request_time %}
+                    {{ item.log_request_time[:19] | replace('T', ' ') }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td class="text-center">
+                  {% if item.log_files_count > 0 %}
+                  <span class="badge bg-info text-dark">{{ item.log_files_count }}</span>
+                  {% else %}
+                  <span class="text-muted">0</span>
+                  {% endif %}
+                </td>
+                <td class="small text-muted">{{ item.latest_log_time or '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <p class="mb-0">{{ _('No agents registered.') }}</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Upload Agent Logs -->
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-header bg-white">

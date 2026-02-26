@@ -1,7 +1,8 @@
 import logging
+import os
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.config import MSK
 from pathlib import Path
 
@@ -487,6 +488,22 @@ async def download_storcli(
     )
 
 
+def _cleanup_old_agent_logs(logs_dir: Path, max_age_days: int = 7) -> int:
+    """Delete agent log files older than max_age_days. Returns count of deleted files."""
+    if not logs_dir.exists():
+        return 0
+    cutoff = datetime.now().timestamp() - (max_age_days * 86400)
+    deleted = 0
+    for f in logs_dir.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            try:
+                f.unlink()
+                deleted += 1
+            except OSError:
+                pass
+    return deleted
+
+
 @router.post("/logs/upload", status_code=status.HTTP_200_OK)
 async def upload_agent_logs(
     file: UploadFile = File(...),
@@ -495,6 +512,11 @@ async def upload_agent_logs(
     """Receive log files uploaded by an agent."""
     uploads_dir = Path(settings.UPLOADS_DIR) / "agent_logs" / str(server.id)
     uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clean old logs from this agent (older than 7 days)
+    cleaned = _cleanup_old_agent_logs(uploads_dir)
+    if cleaned:
+        logger.info("Cleaned %d old log files for agent %s", cleaned, server.hostname)
 
     timestamp = datetime.now(MSK).strftime("%Y%m%d_%H%M%S")
     safe_filename = f"{server.hostname}_{timestamp}_{file.filename}"

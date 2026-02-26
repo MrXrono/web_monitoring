@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 from app.config import MSK
 from typing import Optional
 
@@ -322,7 +323,7 @@ def _base_context(request: Request, active_page: str = "", **extra) -> dict:
         "_": _make_gettext(lang),
         "active_page": active_page,
         "csrf_token": request.cookies.get("csrf_token", ""),
-        "version": "1.1.1",
+        "version": "1.1.2",
         "current_year": datetime.now().year,
         "active_alerts_count": 0,
         "current_user": None,
@@ -1041,6 +1042,7 @@ async def settings_page(
             result = await db.execute(select(Server).order_by(Server.hostname.asc()))
             servers = result.scalars().all()
             agents_list = []
+            log_status_list = []
             for srv in servers:
                 info = srv.server_info or {}
                 agents_list.append({
@@ -1051,7 +1053,61 @@ async def settings_page(
                     "agent_version": srv.agent_version or "N/A",
                     "debug_enabled": srv.debug_mode if hasattr(srv, 'debug_mode') else info.get("debug_enabled", False),
                 })
+
+                # Build log request status for this agent
+                pending_cmds = info.get("pending_commands", [])
+                executed_cmds = info.get("executed_commands", [])
+
+                # Find latest upload_logs command in pending
+                pending_log_cmd = None
+                for cmd in reversed(pending_cmds):
+                    if cmd.get("type") == "upload_logs":
+                        pending_log_cmd = cmd
+                        break
+
+                # Find latest upload_logs command in executed
+                executed_log_cmd = None
+                for cmd in reversed(executed_cmds):
+                    if cmd.get("type") == "upload_logs":
+                        executed_log_cmd = cmd
+                        break
+
+                # Check local log files
+                agent_logs_dir = Path("/app/uploads/agent_logs") / str(srv.id)
+                log_files_count = 0
+                latest_log_time = None
+                if agent_logs_dir.exists():
+                    for f in agent_logs_dir.iterdir():
+                        if f.is_file():
+                            log_files_count += 1
+                            mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=MSK)
+                            if latest_log_time is None or mtime > latest_log_time:
+                                latest_log_time = mtime
+
+                # Determine status
+                if pending_log_cmd:
+                    log_req_status = "pending"
+                    log_req_time = pending_log_cmd.get("created_at", "")
+                elif executed_log_cmd:
+                    log_req_status = "completed"
+                    log_req_time = executed_log_cmd.get("acked_at", executed_log_cmd.get("created_at", ""))
+                else:
+                    log_req_status = "none"
+                    log_req_time = ""
+
+                log_status_list.append({
+                    "server_id": srv.id,
+                    "hostname": srv.hostname,
+                    "ip": srv.ip_address,
+                    "status": srv.status,
+                    "log_request_status": log_req_status,
+                    "log_request_time": log_req_time,
+                    "log_files_count": log_files_count,
+                    "latest_log_time": latest_log_time.strftime("%d.%m.%Y %H:%M") if latest_log_time else "",
+                })
+
             extra["agents"] = agents_list
+            extra["log_status"] = log_status_list
 
         # Read last N lines of server log for display
         log_path = os.environ.get("LOG_FILE", "/app/logs/server.log")
@@ -1474,7 +1530,18 @@ async def api_debug_collect_all(
     """Request log collection from all online agents."""
     from app.database import async_session
     from app.models.server import Server
+    from app.api.v1.agent import _cleanup_old_agent_logs
     import secrets as _secrets
+
+    # Clean old agent logs before requesting new ones
+    logs_base = Path("/app/uploads/agent_logs")
+    total_cleaned = 0
+    if logs_base.exists():
+        for subdir in logs_base.iterdir():
+            if subdir.is_dir():
+                total_cleaned += _cleanup_old_agent_logs(subdir)
+    if total_cleaned:
+        logger.info("Cleaned %d old agent log files before collection", total_cleaned)
 
     async with async_session() as db:
         result = await db.execute(select(Server).where(Server.status == "online"))
