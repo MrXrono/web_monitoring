@@ -506,6 +506,8 @@ async def dashboard_page(
     from sqlalchemy import func
     from sqlalchemy.orm import selectinload
 
+    _ = _make_gettext(_get_lang(request))
+
     servers = []
     stats = {
         "servers_online": 0,
