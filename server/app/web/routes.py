@@ -782,14 +782,6 @@ async def server_detail_page(
             if pd.state and pd.state.lower() in ("online", "onln", "ugood", "jbod", "ghs", "dhs"):
                 pd_ok += 1
             all_pds.append(pd)
-
-    # Count smartctl drives when no hardware RAID controllers
-    smart_drives_list = []
-    if not all_pds and srv.last_report:
-        raw_smart = srv.last_report.get("smart_drives") or []
-        pd_total = len(raw_smart)
-        pd_ok = sum(1 for d in raw_smart if d.get("smart_status") is not False)
-        smart_drives_list = raw_smart
         bbu_info = None
         if ctrl.bbu:
             is_cv = ctrl.bbu.bbu_type and ctrl.bbu.bbu_type.upper().startswith("CVPM")
@@ -832,6 +824,14 @@ async def server_detail_page(
             "driver_name": ctrl.driver_name or "",
             "bbu": bbu_info,
         })
+
+    # Count smartctl drives when no hardware RAID controllers
+    smart_drives_list = []
+    if not all_pds and srv.last_report:
+        raw_smart = srv.last_report.get("smart_drives") or []
+        pd_total = len(raw_smart)
+        pd_ok = sum(1 for d in raw_smart if d.get("smart_status") is not False)
+        smart_drives_list = raw_smart
 
     uptime_str = "N/A"
     if srv.uptime_seconds:
