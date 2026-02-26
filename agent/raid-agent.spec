@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.7
+%define version     1.1.0
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -22,10 +22,7 @@ BuildRequires:  python3 >= 3.9
 BuildRequires:  python3-devel
 # systemd macros replaced with explicit commands for cross-distro build compatibility
 
-Requires:       python3 >= 3.9
-Requires:       python3-pip
 Requires:       systemd
-Requires(pre):  shadow-utils
 Requires(post): systemd
 Requires(preun): systemd
 Requires(postun): systemd
@@ -92,7 +89,58 @@ install -d -m 0755 %{buildroot}%{_sysconfdir}/logrotate.d
 install -m 0644 config/raid-agent.logrotate %{buildroot}%{_sysconfdir}/logrotate.d/raid-agent
 
 %pre
-# Pre-install: nothing special needed since we run as root
+# Pre-install: check and install system dependencies
+echo "=== Checking system dependencies ==="
+
+# --- python3 ---
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 not found, installing..."
+    if command -v dnf >/dev/null 2>&1; then
+        dnf install -y python3 2>/dev/null
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y python3 2>/dev/null
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "ERROR: Failed to install python3. Install it manually and retry."
+        exit 1
+    fi
+    echo "  python3 installed: $(python3 --version 2>&1)"
+else
+    echo "  python3: $(python3 --version 2>&1)"
+fi
+
+# --- python3-pip (needed for venv/pip bootstrap) ---
+if ! python3 -m pip --version >/dev/null 2>&1; then
+    echo "python3-pip not found, installing..."
+    if command -v dnf >/dev/null 2>&1; then
+        dnf install -y python3-pip 2>/dev/null
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y python3-pip 2>/dev/null
+    fi
+    # Fallback: ensurepip
+    if ! python3 -m pip --version >/dev/null 2>&1; then
+        python3 -m ensurepip --upgrade 2>/dev/null || true
+    fi
+    if ! python3 -m pip --version >/dev/null 2>&1; then
+        echo "WARNING: pip not available. venv bootstrap may be limited."
+    else
+        echo "  pip installed: $(python3 -m pip --version 2>&1)"
+    fi
+else
+    echo "  pip: $(python3 -m pip --version 2>&1)"
+fi
+
+# --- python3-venv (some distros ship it separately) ---
+if ! python3 -m venv --help >/dev/null 2>&1; then
+    echo "python3-venv not available, installing..."
+    if command -v dnf >/dev/null 2>&1; then
+        dnf install -y python3-libs 2>/dev/null
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y python3-libs 2>/dev/null
+    fi
+fi
+
+echo "=== Dependencies OK ==="
 
 %post
 # Post-install: create virtualenv, install dependencies, setup SELinux, enable service
@@ -140,14 +188,66 @@ fi
 systemctl daemon-reload
 systemctl enable raid-agent.service 2>/dev/null || true
 
-# Start service only on fresh install (not upgrade)
-if [ $1 -eq 1 ]; then
-    echo "RAID Monitor Agent installed. Configure /etc/raid-agent/config.yml and run:"
-    echo "  raid-agent --register"
-    echo "  systemctl start raid-agent"
-elif [ $1 -ge 2 ]; then
-    # Upgrade: restart service if running
-    systemctl try-restart raid-agent.service 2>/dev/null || true
+# ---------------------------------------------------------------------------
+# Handle RAID_SERVER_URL environment variable for auto-registration
+# Usage: RAID_SERVER_URL=https://web-monitoring.vniizht.lan rpm -ivh raid-agent.rpm
+# ---------------------------------------------------------------------------
+if [ -n "${RAID_SERVER_URL:-}" ] && [ $1 -eq 1 ]; then
+    echo "=== Auto-configuration ==="
+    echo "Server URL: ${RAID_SERVER_URL}"
+
+    # Write server_url to config
+    %{install_dir}/venv/bin/python3 -c "
+import yaml, os
+config_path = '%{config_dir}/config.yml'
+config = {}
+if os.path.isfile(config_path):
+    with open(config_path) as f:
+        config = yaml.safe_load(f) or {}
+config['server_url'] = '${RAID_SERVER_URL}'.rstrip('/')
+config.setdefault('ssl_verify', True)
+config.setdefault('collection_interval', 600)
+with open(config_path, 'w') as f:
+    yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
+os.chmod(config_path, 0o600)
+" 2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        echo "Config updated: server_url=${RAID_SERVER_URL}"
+
+        # Auto-register with the server
+        echo "Registering agent with server..."
+        %{install_dir}/venv/bin/raid-agent --register 2>&1 | tail -5
+
+        if [ $? -eq 0 ]; then
+            echo "Registration successful. Starting service..."
+            systemctl start raid-agent.service 2>/dev/null || true
+        else
+            echo "WARNING: Auto-registration failed. Register manually:"
+            echo "  sudo raid-agent --register"
+        fi
+    else
+        echo "WARNING: Failed to update config. Register manually:"
+        echo "  sudo raid-agent --register"
+    fi
+    echo "=== Auto-configuration complete ==="
+else
+    # No RAID_SERVER_URL — standard manual setup
+    if [ $1 -eq 1 ]; then
+        echo ""
+        echo "RAID Monitor Agent v%{version} installed."
+        echo ""
+        echo "Quick start:"
+        echo "  RAID_SERVER_URL=https://your-server rpm -ivh raid-agent.rpm  (auto-register)"
+        echo ""
+        echo "Or manual setup:"
+        echo "  1. Edit /etc/raid-agent/config.yml — set server_url"
+        echo "  2. sudo raid-agent --register"
+        echo "  3. systemctl start raid-agent"
+    elif [ $1 -ge 2 ]; then
+        # Upgrade: restart service if running
+        systemctl try-restart raid-agent.service 2>/dev/null || true
+    fi
 fi
 
 %preun
@@ -210,7 +310,10 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
-* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.7-1
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.0-1
+- Auto-install dependencies in %%pre: python3, pip, venv (dnf/yum)
+- Auto-register via env var: RAID_SERVER_URL=https://server rpm -ivh raid-agent.rpm
+- Remove hard Requires on python3/python3-pip (handled dynamically in %%pre)
 - Fix: sudo raid-agent not found — add symlink to /usr/sbin for secure_path compatibility
 
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.6-1
