@@ -127,7 +127,6 @@ async def receive_report(
     server.uptime_seconds = payload.uptime_seconds
     server.last_os_update = payload.last_os_update
     server.last_seen = now
-    server.status = "online"
 
     if payload.os:
         server.os_name = payload.os.name
@@ -393,7 +392,8 @@ async def receive_report(
         await db.delete(stale_sw)
 
     # Compute server status based on hardware health
-    status = "ok"
+    # NOTE: "online" is the healthy state — UI queries rely on status == "online"
+    status = "online"
 
     # Check hardware RAID controllers
     for ctrl_report in payload.controllers:
