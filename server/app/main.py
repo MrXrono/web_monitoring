@@ -305,12 +305,11 @@ async def register_prebuilt_packages():
             new_registered = True
             logger.info("Registered pre-built agent package: %s (v%s)", rpm_file.name, version)
 
-        # After registering all new packages, ensure the highest version is current
-        if new_registered:
-            all_result = await db.execute(select(AgentPackage))
-            all_pkgs = list(all_result.scalars().all())
+        # Always ensure the highest version is marked as current
+        all_result = await db.execute(select(AgentPackage))
+        all_pkgs = list(all_result.scalars().all())
 
-            # Sort by semantic version descending
+        if all_pkgs:
             def _ver_tuple(p):
                 try:
                     return tuple(int(x) for x in p.version.split("."))
@@ -322,8 +321,7 @@ async def register_prebuilt_packages():
             for i, p in enumerate(all_pkgs):
                 p.is_current = (i == 0)
 
-            if all_pkgs:
-                logger.info("Current agent package set to v%s", all_pkgs[0].version)
+            logger.info("Current agent package set to v%s", all_pkgs[0].version)
 
         await db.commit()
 
