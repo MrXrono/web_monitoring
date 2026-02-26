@@ -231,9 +231,11 @@ os.chmod(config_path, 0o600)
     fi
     echo "=== Auto-configuration complete ==="
 elif [ $1 -ge 2 ]; then
-    # Upgrade: daemon-reload + restart
-    systemctl daemon-reload
-    systemctl try-restart raid-agent.service 2>/dev/null || true
+    # Upgrade: daemon-reload + deferred restart
+    # Restart in background with delay so rpm -Uvh can finish first
+    # (the running agent process is the one calling rpm — killing it
+    # immediately causes "signal 15" error and breaks the update)
+    (sleep 2 && systemctl daemon-reload && systemctl restart raid-agent.service) &>/dev/null &
 else
     # Fresh install without RAID_SERVER_URL — manual setup
     # daemon-reload in background (don't block RPM install)
@@ -312,6 +314,8 @@ fi
 
 %changelog
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.1-1
+- Fix: self-update SHA256 mismatch — server now refreshes hash on RPM rebuild
+- Fix: self-update signal 15 — deferred restart in %%post, removed explicit restart from updater
 - Fix: health status text overflow on server card — click to expand/collapse
 - Fix: NameError '_' not defined in dashboard_page
 - Fix: footer version hardcoded — now dynamic

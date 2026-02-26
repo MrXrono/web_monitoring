@@ -299,21 +299,10 @@ def do_update(
     # Clean up temp file
     _cleanup_tmp()
 
-    # Restart the service - the RPM postinstall script should handle this,
-    # but we trigger it explicitly as a safety measure
-    logger.info("Requesting service restart via systemctl...")
-    try:
-        subprocess.run(
-            ["systemctl", "restart", "raid-agent"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
-        logger.warning(
-            "Could not restart service (RPM postinstall should handle this): %s", exc
-        )
+    # RPM %post handles the service restart in the background.
+    # Do NOT call systemctl restart here — it would kill THIS process
+    # (the agent performing the update) before rpm -Uvh returns.
+    logger.info("Update applied. RPM postinstall will restart the service.")
 
     return True
 

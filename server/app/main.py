@@ -271,26 +271,42 @@ async def register_prebuilt_packages():
         return
 
     async with async_session() as db:
-        new_registered = False
-
         for rpm_file in pkg_dir.glob("*.rpm"):
-            # Check if already registered
-            result = await db.execute(
-                select(AgentPackage).where(AgentPackage.filename == rpm_file.name)
-            )
-            if result.scalar_one_or_none():
-                continue
-
             data = rpm_file.read_bytes()
             sha256 = hashlib.sha256(data).hexdigest()
+            file_size = rpm_file.stat().st_size
             version_match = _re.search(r"raid-agent-(\d+\.\d+\.\d+)", rpm_file.name)
             version = version_match.group(1) if version_match else "unknown"
 
-            # Check if version already exists
+            # Check if already registered by filename
+            result = await db.execute(
+                select(AgentPackage).where(AgentPackage.filename == rpm_file.name)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update hash/size if file on disk changed (RPM was rebuilt)
+                if existing.file_hash_sha256 != sha256:
+                    logger.info(
+                        "Updating hash for %s: %s -> %s",
+                        rpm_file.name, existing.file_hash_sha256[:16], sha256[:16],
+                    )
+                    existing.file_hash_sha256 = sha256
+                    existing.file_size = file_size
+                continue
+
+            # Check if version already exists under different filename
             result = await db.execute(
                 select(AgentPackage).where(AgentPackage.version == version)
             )
-            if result.scalar_one_or_none():
+            existing_ver = result.scalar_one_or_none()
+            if existing_ver:
+                # Update hash/size if file changed
+                if existing_ver.file_hash_sha256 != sha256:
+                    existing_ver.file_hash_sha256 = sha256
+                    existing_ver.file_size = file_size
+                    existing_ver.filename = rpm_file.name
+                    existing_ver.file_path = str(rpm_file)
                 continue
 
             pkg = AgentPackage(
@@ -298,11 +314,10 @@ async def register_prebuilt_packages():
                 filename=rpm_file.name,
                 file_path=str(rpm_file),
                 file_hash_sha256=sha256,
-                file_size=rpm_file.stat().st_size,
+                file_size=file_size,
                 is_current=False,
             )
             db.add(pkg)
-            new_registered = True
             logger.info("Registered pre-built agent package: %s (v%s)", rpm_file.name, version)
 
         # Always ensure the highest version is marked as current
