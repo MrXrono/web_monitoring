@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.2
+%define version     1.1.3
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -313,6 +313,11 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.3-1
+- Fix: periodic storcli re-check every hour in daemon loop (auto-install if missing)
+- Fix: ensure_storcli on collect_now command (was only find, no install)
+- Fix: delete all old agent logs on collect (not just >7 days)
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.2-1
 - Add: auto-cleanup of old agent logs (>7 days) on upload and collection
 - Add: "Log Request Status" table on debug settings page

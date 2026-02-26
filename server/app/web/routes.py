@@ -323,7 +323,7 @@ def _base_context(request: Request, active_page: str = "", **extra) -> dict:
         "_": _make_gettext(lang),
         "active_page": active_page,
         "csrf_token": request.cookies.get("csrf_token", ""),
-        "version": "1.1.2",
+        "version": "1.1.3",
         "current_year": datetime.now().year,
         "active_alerts_count": 0,
         "current_user": None,
@@ -1530,18 +1530,24 @@ async def api_debug_collect_all(
     """Request log collection from all online agents."""
     from app.database import async_session
     from app.models.server import Server
-    from app.api.v1.agent import _cleanup_old_agent_logs
     import secrets as _secrets
+    import shutil
 
-    # Clean old agent logs before requesting new ones
+    # Delete ALL existing agent logs before requesting fresh ones
     logs_base = Path("/app/uploads/agent_logs")
-    total_cleaned = 0
     if logs_base.exists():
+        total_cleaned = 0
         for subdir in logs_base.iterdir():
             if subdir.is_dir():
-                total_cleaned += _cleanup_old_agent_logs(subdir)
-    if total_cleaned:
-        logger.info("Cleaned %d old agent log files before collection", total_cleaned)
+                for f in subdir.iterdir():
+                    if f.is_file():
+                        try:
+                            f.unlink()
+                            total_cleaned += 1
+                        except OSError:
+                            pass
+        if total_cleaned:
+            logger.info("Deleted %d old agent log files before collection", total_cleaned)
 
     async with async_session() as db:
         result = await db.execute(select(Server).where(Server.status == "online"))
@@ -1759,6 +1765,16 @@ async def api_agent_collect_logs(
     from app.database import async_session
     from app.models.server import Server
     import secrets as _secrets
+
+    # Delete existing logs for this agent before requesting fresh ones
+    agent_logs_dir = Path("/app/uploads/agent_logs") / server_id
+    if agent_logs_dir.exists():
+        for f in agent_logs_dir.iterdir():
+            if f.is_file():
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
 
     async with async_session() as db:
         result = await db.execute(select(Server).where(Server.id == server_id))

@@ -361,7 +361,7 @@ def _execute_command(cmd, config):
 
     if cmd_type == "collect_now":
         logger.info("Server requested immediate collection")
-        storcli_path = find_storcli(config.get("storcli_path", ""))
+        storcli_path = ensure_storcli(config)
         if storcli_path:
             run_collection_cycle(config, storcli_path)
         else:
@@ -489,6 +489,10 @@ def daemon_loop(config, storcli_path):
         "Starting daemon loop (interval=%ds, storcli=%s)", interval, storcli_path
     )
 
+    # Periodic storcli re-check: every hour (3600s)
+    STORCLI_RECHECK_INTERVAL = 3600
+    last_storcli_check = time.monotonic()
+
     # Start background command polling thread
     cmd_thread = threading.Thread(
         target=_command_poll_loop, args=(config,), daemon=True, name="cmd-poll"
@@ -497,6 +501,19 @@ def daemon_loop(config, storcli_path):
 
     while not _shutdown_event.is_set():
         cycle_start = time.monotonic()
+
+        # Periodic storcli availability check (every hour)
+        if cycle_start - last_storcli_check >= STORCLI_RECHECK_INTERVAL or not storcli_path:
+            last_storcli_check = cycle_start
+            new_path = ensure_storcli(config)
+            if new_path and new_path != storcli_path:
+                logger.info("storcli64 path updated: %s -> %s", storcli_path or "(none)", new_path)
+                storcli_path = new_path
+            elif not new_path and storcli_path:
+                logger.warning("storcli64 disappeared from %s, RAID collection disabled", storcli_path)
+                storcli_path = ""
+            elif not new_path and not storcli_path:
+                logger.debug("storcli64 still not available, will retry in %ds", STORCLI_RECHECK_INTERVAL)
 
         # Run collection and reporting
         try:
