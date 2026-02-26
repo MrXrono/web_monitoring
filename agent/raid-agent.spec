@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.0
+%define version     1.1.1
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -311,6 +311,13 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.1-1
+- Fix: health status text overflow on server card — click to expand/collapse
+- Fix: NameError '_' not defined in dashboard_page
+- Fix: footer version hardcoded — now dynamic
+- Fix: agent package current version detection on server startup
+- Fix: systemctl daemon-reload blocking RPM install for 2-3 minutes
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.0-1
 - Auto-install dependencies in %%pre: python3, pip, venv (dnf/yum)
 - Auto-register via env var: RAID_SERVER_URL=https://server rpm -ivh raid-agent.rpm

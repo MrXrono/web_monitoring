@@ -139,6 +139,19 @@ a {
   padding: 0.2em 0.5em;
 }
 
+.health-issue-toggle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.2s ease;
+}
+
+.health-issue-toggle.white-space-normal {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+}
+
 /* ---------- Temperature Gauge ---------- */
 .temp-gauge {
   position: relative;
