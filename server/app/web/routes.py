@@ -1107,8 +1107,8 @@ def _get_ssl_info() -> dict:
         cert = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert_data)
         subject = cert.get_subject()
         issuer = cert.get_issuer()
-        not_after = datetime.strptime(cert.get_notAfter().decode("ascii"), "%Y%m%d%H%M%SZ")
-        not_before = datetime.strptime(cert.get_notBefore().decode("ascii"), "%Y%m%d%H%M%SZ")
+        not_after = datetime.strptime(cert.get_notAfter().decode("ascii"), "%Y%m%d%H%M%SZ").replace(tzinfo=MSK)
+        not_before = datetime.strptime(cert.get_notBefore().decode("ascii"), "%Y%m%d%H%M%SZ").replace(tzinfo=MSK)
         days_left = (not_after - datetime.now(MSK)).days
         return {
             "subject": f"CN={subject.CN}" if subject.CN else str(subject),
