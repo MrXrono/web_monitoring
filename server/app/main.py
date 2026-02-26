@@ -17,6 +17,7 @@ from sqlalchemy import select, text
 
 from app.config import settings
 from app.database import engine, Base, async_session
+import app.models  # noqa: F401 — register ALL models with Base.metadata before create_all
 
 logger = logging.getLogger("raid-monitor")
 

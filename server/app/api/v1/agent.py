@@ -24,6 +24,7 @@ from app.models.smart_history import SmartHistory
 from app.models.event import ControllerEvent
 from app.models.agent_package import AgentPackage
 from app.models.setting import Setting
+from app.models.software_raid import SoftwareRaid
 from app.schemas.agent_report import (
     AgentRegisterRequest,
     AgentRegisterResponse,
@@ -119,6 +120,7 @@ async def receive_report(
     server.ip_address = payload.ip_address
     server.agent_version = payload.agent_version
     server.storcli_version = payload.storcli_version
+    server.smartctl_version = payload.smartctl_version
     server.cpu_model = payload.cpu_model
     server.cpu_cores = payload.cpu_cores
     server.ram_total_gb = payload.ram_total_gb
@@ -342,6 +344,87 @@ async def receive_report(
                     event.event_time = now
 
             db.add(event)
+
+    # Process Software RAID arrays (mdadm)
+    reported_array_names = set()
+    for sw_report in payload.software_raid:
+        reported_array_names.add(sw_report.array_name)
+        result = await db.execute(
+            select(SoftwareRaid).where(
+                SoftwareRaid.server_id == server.id,
+                SoftwareRaid.array_name == sw_report.array_name,
+            )
+        )
+        sw_raid = result.scalar_one_or_none()
+        if sw_raid is None:
+            sw_raid = SoftwareRaid(
+                server_id=server.id,
+                array_name=sw_report.array_name,
+            )
+            db.add(sw_raid)
+
+        sw_raid.raid_level = sw_report.raid_level
+        sw_raid.state = sw_report.state or "unknown"
+        sw_raid.array_size = sw_report.array_size
+        sw_raid.num_devices = sw_report.num_devices
+        sw_raid.active_devices = sw_report.active_devices
+        sw_raid.working_devices = sw_report.working_devices
+        sw_raid.failed_devices = sw_report.failed_devices
+        sw_raid.spare_devices = sw_report.spare_devices
+        sw_raid.rebuild_progress = sw_report.rebuild_progress
+        sw_raid.uuid_str = sw_report.uuid
+        sw_raid.creation_time = sw_report.creation_time
+        sw_raid.member_devices = [m.model_dump() for m in sw_report.member_devices]
+        sw_raid.raw_data = sw_report.raw
+
+    # Remove stale software RAID arrays no longer reported
+    if reported_array_names:
+        result = await db.execute(
+            select(SoftwareRaid).where(
+                SoftwareRaid.server_id == server.id,
+                SoftwareRaid.array_name.notin_(reported_array_names),
+            )
+        )
+    else:
+        result = await db.execute(
+            select(SoftwareRaid).where(SoftwareRaid.server_id == server.id)
+        )
+    for stale_sw in result.scalars().all():
+        await db.delete(stale_sw)
+
+    # Compute server status based on hardware health
+    status = "ok"
+
+    # Check hardware RAID controllers
+    for ctrl_report in payload.controllers:
+        if ctrl_report.status and ctrl_report.status.lower() not in ("optimal", "ok", "good"):
+            status = "critical"
+        for vd in ctrl_report.virtual_drives:
+            vd_state = (vd.state or "").lower()
+            if vd_state in ("dgrd", "degraded"):
+                status = "critical"
+            elif vd_state in ("rbld", "rebuilding") and status != "critical":
+                status = "warning"
+        for pd in ctrl_report.physical_drives:
+            pd_state = (pd.state or "").lower()
+            if pd_state in ("failed", "offline", "ubad"):
+                status = "critical"
+            elif pd.predictive_failure and pd.predictive_failure > 0 and status != "critical":
+                status = "warning"
+            elif pd.smart_alert and status != "critical":
+                status = "warning"
+
+    # Check software RAID arrays
+    for sw_report in payload.software_raid:
+        sw_state = (sw_report.state or "").lower()
+        if sw_state in ("degraded", "inactive"):
+            status = "critical"
+        elif "rebuild" in sw_state and status != "critical":
+            status = "warning"
+        if sw_report.failed_devices and sw_report.failed_devices > 0:
+            status = "critical"
+
+    server.status = status
 
     await db.commit()
 
