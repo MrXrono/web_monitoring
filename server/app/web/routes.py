@@ -323,7 +323,7 @@ def _base_context(request: Request, active_page: str = "", **extra) -> dict:
         "_": _make_gettext(lang),
         "active_page": active_page,
         "csrf_token": request.cookies.get("csrf_token", ""),
-        "version": "1.1.4",
+        "version": "1.1.5",
         "current_year": datetime.now().year,
         "active_alerts_count": 0,
         "current_user": None,
