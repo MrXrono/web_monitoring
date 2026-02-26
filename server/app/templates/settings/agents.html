@@ -103,7 +103,8 @@
                   <button class="btn btn-sm btn-outline-primary"
                           hx-put="/api/settings/agents/packages/{{ pkg.id }}/set-current"
                           hx-swap="none"
-                          hx-confirm="{{ _('Set this version as current?') }}">
+                          hx-confirm="{{ _('Set this version as current?') }}"
+                          hx-on::after-request="if(event.detail.successful) location.reload()">
                     {{ _('Set Current') }}
                   </button>
                   {% endif %}

@@ -384,6 +384,39 @@ async def upload_agent_package(
     )
 
 
+@router.put("/agents/packages/{package_id}/set-current")
+async def set_agent_package_current(
+    package_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark a specific agent package as the current (active) version."""
+    _require_admin(user)
+
+    # Find target package
+    result = await db.execute(
+        select(AgentPackage).where(AgentPackage.id == package_id)
+    )
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Package not found",
+        )
+
+    # Unmark all packages
+    all_result = await db.execute(select(AgentPackage))
+    for pkg in all_result.scalars().all():
+        pkg.is_current = False
+
+    # Mark target as current
+    target.is_current = True
+    await db.commit()
+
+    logger.info("Agent package v%s set as current by %s", target.version, user.username)
+    return {"status": "ok", "version": target.version}
+
+
 @router.post("/logs/collect-all", response_model=LogCollectResponse)
 async def collect_all_logs(
     user: User = Depends(get_current_user),

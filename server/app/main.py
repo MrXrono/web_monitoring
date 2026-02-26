@@ -271,19 +271,7 @@ async def register_prebuilt_packages():
         return
 
     async with async_session() as db:
-        # Fix: ensure only the latest version is marked as current
-        result = await db.execute(
-            select(AgentPackage).where(AgentPackage.is_current == True)
-        )
-        current_pkgs = result.scalars().all()
-        if len(current_pkgs) > 1:
-            # Sort by version descending, keep only the newest
-            current_pkgs.sort(
-                key=lambda p: tuple(int(x) for x in p.version.split(".") if x.isdigit()),
-                reverse=True,
-            )
-            for p in current_pkgs[1:]:
-                p.is_current = False
+        new_registered = False
 
         for rpm_file in pkg_dir.glob("*.rpm"):
             # Check if already registered
@@ -305,21 +293,37 @@ async def register_prebuilt_packages():
             if result.scalar_one_or_none():
                 continue
 
-            # Unmark all existing packages as non-current
-            all_pkgs = await db.execute(select(AgentPackage))
-            for p in all_pkgs.scalars().all():
-                p.is_current = False
-
             pkg = AgentPackage(
                 version=version,
                 filename=rpm_file.name,
                 file_path=str(rpm_file),
                 file_hash_sha256=sha256,
                 file_size=rpm_file.stat().st_size,
-                is_current=True,
+                is_current=False,
             )
             db.add(pkg)
+            new_registered = True
             logger.info("Registered pre-built agent package: %s (v%s)", rpm_file.name, version)
+
+        # After registering all new packages, ensure the highest version is current
+        if new_registered:
+            all_result = await db.execute(select(AgentPackage))
+            all_pkgs = list(all_result.scalars().all())
+
+            # Sort by semantic version descending
+            def _ver_tuple(p):
+                try:
+                    return tuple(int(x) for x in p.version.split("."))
+                except (ValueError, AttributeError):
+                    return (0,)
+
+            all_pkgs.sort(key=_ver_tuple, reverse=True)
+
+            for i, p in enumerate(all_pkgs):
+                p.is_current = (i == 0)
+
+            if all_pkgs:
+                logger.info("Current agent package set to v%s", all_pkgs[0].version)
 
         await db.commit()
 
