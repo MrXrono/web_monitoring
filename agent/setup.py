@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="raid-agent",
-    version="1.1.3",
+    version="1.1.4",
     description="RAID Monitor Agent - collects RAID controller data via storcli64",
     long_description=(
         "A daemon that collects RAID controller health data using storcli64 "

@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.3
+%define version     1.1.4
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -313,6 +313,9 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.4-1
+- Fix: storcli download SSL error on self-signed certificates (verify=False like reporter)
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.3-1
 - Fix: periodic storcli re-check every hour in daemon loop (auto-install if missing)
 - Fix: ensure_storcli on collect_now command (was only find, no install)

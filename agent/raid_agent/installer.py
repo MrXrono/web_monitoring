@@ -110,10 +110,10 @@ def install_storcli(
 
     logger.info("Downloading storcli64 RPM from %s", download_url)
 
-    # Prepare SSL verification
-    verify = ca_bundle if (ca_bundle and os.path.isfile(ca_bundle)) else ssl_verify
-    if not verify:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    # Always trust self-signed certificates — same as reporter.py
+    # Internal infrastructure may use self-signed certs
+    verify = ca_bundle if (ca_bundle and os.path.isfile(ca_bundle)) else False
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     # Download RPM
     try:
