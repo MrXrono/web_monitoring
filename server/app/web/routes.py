@@ -259,6 +259,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "Device": "Устройство",
         "Capacity": "Объём",
         "Serial Number": "Серийный номер",
+        "Power On Hours": "Часы работы",
+        "Attributes": "Атрибуты",
+        "Flags": "Флаги",
+        "Drive not found": "Диск не найден",
+        "No SMART data available": "Данные SMART недоступны",
     },
     "en": {},
 }
@@ -777,6 +782,14 @@ async def server_detail_page(
             if pd.state and pd.state.lower() in ("online", "onln", "ugood", "jbod", "ghs", "dhs"):
                 pd_ok += 1
             all_pds.append(pd)
+
+    # Count smartctl drives when no hardware RAID controllers
+    smart_drives_list = []
+    if not all_pds and srv.last_report:
+        raw_smart = srv.last_report.get("smart_drives") or []
+        pd_total = len(raw_smart)
+        pd_ok = sum(1 for d in raw_smart if d.get("smart_status") is not False)
+        smart_drives_list = raw_smart
         bbu_info = None
         if ctrl.bbu:
             is_cv = ctrl.bbu.bbu_type and ctrl.bbu.bbu_type.upper().startswith("CVPM")
@@ -2062,6 +2075,7 @@ async def server_pd_partial(
 ):
     """Return physical drives HTML partial for HTMX tab loading."""
     from app.database import async_session
+    from app.models.server import Server
     from app.models.controller import Controller
     from app.models.physical_drive import PhysicalDrive
 
@@ -2077,69 +2091,136 @@ async def server_pd_partial(
         )
         pds = result.scalars().all()
 
-    if not pds:
+    # --- Hardware RAID physical drives (MegaRAID) ---
+    if pds:
+        rows = []
+        for pd in pds:
+            state_cls = {
+                "onln": "bg-success", "online": "bg-success",
+                "offln": "bg-danger", "ubad": "bg-danger",
+                "rbld": "bg-info text-dark",
+                "ghs": "bg-cyan", "dhs": "bg-cyan",
+            }.get((pd.state or "").lower(), "bg-secondary")
+            temp_cls = "text-danger fw-bold" if (pd.temperature or 0) > 50 else ("text-warning" if (pd.temperature or 0) > 40 else "")
+            med_cls = " text-danger fw-bold" if (pd.media_error_count or 0) > 0 else ""
+            oth_cls = " text-warning fw-bold" if (pd.other_error_count or 0) > 0 else ""
+            pf_cls = " text-danger fw-bold" if (pd.predictive_failure or 0) > 0 else ""
+            smart_icon = ('<span class="text-danger"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">'
+                          '<path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566z'
+                          'M8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg></span>'
+                          if pd.smart_alert else
+                          '<span class="text-success"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">'
+                          '<path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg></span>')
+            temp_str = f"{pd.temperature} C" if pd.temperature is not None else "N/A"
+            tooltip_parts = []
+            if pd.wwn:
+                tooltip_parts.append(f"WWN: {pd.wwn}")
+            if pd.serial_number:
+                tooltip_parts.append(f"S/N: {pd.serial_number}")
+            if pd.firmware_version:
+                tooltip_parts.append(f"FW: {pd.firmware_version}")
+            if pd.physical_sector_size:
+                tooltip_parts.append(f"Phys Sector: {pd.physical_sector_size}")
+            row_title = "  ".join(tooltip_parts)
+            speed_tooltip = f'{_("Link")}: {pd.link_speed or "N/A"} / {_("Device")}: {pd.device_speed or "N/A"}'
+            rows.append(f'''<tr title="{row_title}" data-bs-toggle="tooltip" data-bs-placement="top"
+                  style="cursor: pointer;"
+                  hx-get="/servers/{server_id}/physical-drives/{pd.enclosure_id}:{pd.slot_number}/smart"
+                  hx-target="#smart-modal-body" hx-swap="innerHTML"
+                  data-bs-target="#smartModal">
+              <td class="fw-semibold">{pd.enclosure_id}:{pd.slot_number}</td>
+              <td><span class="badge {state_cls}">{pd.state or "N/A"}</span></td>
+              <td>{pd.drive_group if pd.drive_group is not None else ""}</td>
+              <td class="text-nowrap">{pd.size or "N/A"}</td>
+              <td class="small">{pd.model or "N/A"}</td>
+              <td>{pd.media_type or "N/A"}</td><td>{pd.interface_type or "N/A"}</td>
+              <td class="small text-nowrap" title="{speed_tooltip}">{pd.link_speed or ""}</td>
+              <td><span class="{temp_cls}">{temp_str}</span></td>
+              <td class="{med_cls}">{pd.media_error_count or 0}</td>
+              <td class="{oth_cls}">{pd.other_error_count or 0}</td>
+              <td class="{pf_cls}">{pd.predictive_failure or 0}</td>
+              <td>{smart_icon}</td>
+            </tr>''')
+
+        html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
+        <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>EID:Slot</th><th>{_("State")}</th><th>DG</th><th>{_("Size")}</th>
+          <th>{_("Model")}</th><th>{_("Type")}</th><th>{_("Interface")}</th><th>{_("Speed")}</th>
+          <th>{_("Temp")}</th><th title="{_("Media Errors")}">Med Err</th>
+          <th title="{_("Other Errors")}">Oth Err</th><th title="{_("Predictive Failure")}">Pred.Fail</th><th>SMART</th>
+        </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
+        return HTMLResponse(content=html)
+
+    # --- Fallback: smartctl drives from last_report (no hardware RAID) ---
+    async with async_session() as db:
+        result = await db.execute(select(Server).where(Server.id == server_id))
+        srv = result.scalar_one_or_none()
+
+    smart_drives = []
+    if srv and srv.last_report:
+        smart_drives = srv.last_report.get("smart_drives") or []
+
+    if not smart_drives:
         return HTMLResponse(
             f'<div class="text-center py-5 text-muted">'
             f'<p>{_("No physical drives found for this server.")}</p></div>'
         )
 
     rows = []
-    for pd in pds:
-        state_cls = {
-            "onln": "bg-success", "online": "bg-success",
-            "offln": "bg-danger", "ubad": "bg-danger",
-            "rbld": "bg-info text-dark",
-            "ghs": "bg-cyan", "dhs": "bg-cyan",
-        }.get((pd.state or "").lower(), "bg-secondary")
-        temp_cls = "text-danger fw-bold" if (pd.temperature or 0) > 50 else ("text-warning" if (pd.temperature or 0) > 40 else "")
-        med_cls = " text-danger fw-bold" if (pd.media_error_count or 0) > 0 else ""
-        oth_cls = " text-warning fw-bold" if (pd.other_error_count or 0) > 0 else ""
-        pf_cls = " text-danger fw-bold" if (pd.predictive_failure or 0) > 0 else ""
-        smart_icon = ('<span class="text-danger"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">'
-                      '<path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566z'
-                      'M8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg></span>'
-                      if pd.smart_alert else
-                      '<span class="text-success"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">'
-                      '<path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg></span>')
-        temp_str = f"{pd.temperature} C" if pd.temperature is not None else "N/A"
-        # Tooltip with WWN, Serial, Firmware, Physical Sector Size
-        tooltip_parts = []
-        if pd.wwn:
-            tooltip_parts.append(f"WWN: {pd.wwn}")
-        if pd.serial_number:
-            tooltip_parts.append(f"S/N: {pd.serial_number}")
-        if pd.firmware_version:
-            tooltip_parts.append(f"FW: {pd.firmware_version}")
-        if pd.physical_sector_size:
-            tooltip_parts.append(f"Phys Sector: {pd.physical_sector_size}")
-        row_title = "  ".join(tooltip_parts)
-        speed_tooltip = f'{_("Link")}: {pd.link_speed or "N/A"} / {_("Device")}: {pd.device_speed or "N/A"}'
-        rows.append(f'''<tr title="{row_title}" data-bs-toggle="tooltip" data-bs-placement="top"
-              style="cursor: pointer;"
-              hx-get="/servers/{server_id}/physical-drives/{pd.enclosure_id}:{pd.slot_number}/smart"
+    for idx, d in enumerate(smart_drives):
+        device = d.get("device") or "N/A"
+        model = d.get("model") or "N/A"
+        serial = d.get("serial_number") or ""
+        firmware = d.get("firmware_version") or ""
+        dev_type = d.get("device_type") or ""
+        capacity = d.get("capacity") or "N/A"
+        temperature = d.get("temperature")
+        power_on = d.get("power_on_hours")
+        reallocated = d.get("reallocated_sectors")
+        pending = d.get("pending_sectors")
+        uncorrectable = d.get("uncorrectable_sectors")
+        smart_ok = d.get("smart_status")
+
+        smart_cls = "bg-success" if smart_ok else ("bg-danger" if smart_ok is False else "bg-secondary")
+        smart_txt = "PASSED" if smart_ok else ("FAILED" if smart_ok is False else "N/A")
+        temp_cls = "text-danger fw-bold" if (temperature or 0) > 50 else ("text-warning" if (temperature or 0) > 40 else "")
+        temp_str = f"{temperature} C" if temperature is not None else "N/A"
+        realloc_cls = " text-danger fw-bold" if (reallocated or 0) > 0 else ""
+        pending_cls = " text-warning fw-bold" if (pending or 0) > 0 else ""
+        uncorr_cls = " text-danger fw-bold" if (uncorrectable or 0) > 0 else ""
+        poh_str = f"{power_on:,}h" if power_on is not None else "N/A"
+
+        # Use device path as identifier for SMART modal
+        import urllib.parse
+        safe_device = urllib.parse.quote(device, safe="")
+
+        rows.append(f'''<tr style="cursor: pointer;"
+              hx-get="/servers/{server_id}/smart-drive/{safe_device}"
               hx-target="#smart-modal-body" hx-swap="innerHTML"
-              data-bs-target="#smartModal">
-          <td class="fw-semibold">{pd.enclosure_id}:{pd.slot_number}</td>
-          <td><span class="badge {state_cls}">{pd.state or "N/A"}</span></td>
-          <td>{pd.drive_group if pd.drive_group is not None else ""}</td>
-          <td class="text-nowrap">{pd.size or "N/A"}</td>
-          <td class="small">{pd.model or "N/A"}</td>
-          <td>{pd.media_type or "N/A"}</td><td>{pd.interface_type or "N/A"}</td>
-          <td class="small text-nowrap" title="{speed_tooltip}">{pd.link_speed or ""}</td>
+              data-bs-toggle="modal" data-bs-target="#smartModal"
+              title="S/N: {serial}  FW: {firmware}">
+          <td class="fw-semibold">{device}</td>
+          <td>{dev_type}</td>
+          <td class="text-nowrap">{capacity}</td>
+          <td class="small">{model}</td>
+          <td><span class="badge {smart_cls}">{smart_txt}</span></td>
           <td><span class="{temp_cls}">{temp_str}</span></td>
-          <td class="{med_cls}">{pd.media_error_count or 0}</td>
-          <td class="{oth_cls}">{pd.other_error_count or 0}</td>
-          <td class="{pf_cls}">{pd.predictive_failure or 0}</td>
-          <td>{smart_icon}</td>
+          <td>{poh_str}</td>
+          <td class="{realloc_cls}">{reallocated if reallocated is not None else "N/A"}</td>
+          <td class="{pending_cls}">{pending if pending is not None else "N/A"}</td>
+          <td class="{uncorr_cls}">{uncorrectable if uncorrectable is not None else "N/A"}</td>
         </tr>''')
 
     html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
     <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
     <thead class="table-light"><tr>
-      <th>EID:Slot</th><th>{_("State")}</th><th>DG</th><th>{_("Size")}</th>
-      <th>{_("Model")}</th><th>{_("Type")}</th><th>{_("Interface")}</th><th>{_("Speed")}</th>
-      <th>{_("Temp")}</th><th title="{_("Media Errors")}">Med Err</th>
-      <th title="{_("Other Errors")}">Oth Err</th><th title="{_("Predictive Failure")}">Pred.Fail</th><th>SMART</th>
+      <th>{_("Device")}</th><th>{_("Type")}</th><th>{_("Size")}</th>
+      <th>{_("Model")}</th><th>SMART</th><th>{_("Temp")}</th>
+      <th title="{_("Power On Hours")}">POH</th>
+      <th title="{_("Reallocated Sectors")}">Realloc</th>
+      <th title="{_("Pending Sectors")}">Pending</th>
+      <th title="{_("Uncorrectable Sectors")}">Uncorr</th>
     </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
     return HTMLResponse(content=html)
 
@@ -2592,6 +2673,129 @@ async def server_software_raids_partial(
       <th>{_("Drives")}</th><th>{_("Failed")}</th><th>{_("Spare")}</th>
       <th>{_("Rebuild Progress")}</th><th>{_("Members")}</th>
     </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
+    return HTMLResponse(content=html)
+
+
+@router.get(
+    "/servers/{server_id}/smart-drive/{device_path:path}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def server_smart_drive_modal(
+    request: Request,
+    server_id: str,
+    device_path: str,
+    current_user: dict = Depends(_require_auth),
+):
+    """Return SMART data modal for a smartctl-detected drive (no hardware RAID)."""
+    import urllib.parse
+    from app.database import async_session
+    from app.models.server import Server
+
+    lang = _get_lang(request)
+    _ = _make_gettext(lang)
+
+    device_path = urllib.parse.unquote(device_path)
+
+    async with async_session() as db:
+        result = await db.execute(select(Server).where(Server.id == server_id))
+        srv = result.scalar_one_or_none()
+
+    if not srv or not srv.last_report:
+        return HTMLResponse(f'<div class="alert alert-warning">{_("No SMART data available")}</div>')
+
+    smart_drives = srv.last_report.get("smart_drives") or []
+    drive = None
+    for d in smart_drives:
+        if d.get("device") == device_path:
+            drive = d
+            break
+
+    if not drive:
+        return HTMLResponse(f'<div class="alert alert-warning">{_("Drive not found")}: {device_path}</div>')
+
+    # Drive identity
+    model = drive.get("model") or "N/A"
+    serial = drive.get("serial_number") or "N/A"
+    firmware = drive.get("firmware_version") or "N/A"
+    dev_type = drive.get("device_type") or "N/A"
+    capacity = drive.get("capacity") or "N/A"
+
+    # SMART status
+    smart_ok = drive.get("smart_status")
+    smart_cls = "bg-success" if smart_ok else ("bg-danger" if smart_ok is False else "bg-secondary")
+    smart_txt = "PASSED" if smart_ok else ("FAILED" if smart_ok is False else "N/A")
+
+    # Key metrics
+    temperature = drive.get("temperature")
+    power_on = drive.get("power_on_hours")
+    reallocated = drive.get("reallocated_sectors")
+    pending = drive.get("pending_sectors")
+    uncorrectable = drive.get("uncorrectable_sectors")
+    temp_str = f"{temperature} C" if temperature is not None else "N/A"
+    poh_str = f"{power_on:,}" if power_on is not None else "N/A"
+
+    html = f'''
+    <div class="mb-3">
+      <h6 class="fw-bold">{device_path}</h6>
+      <table class="table table-sm table-borderless mb-2">
+        <tr><td class="text-muted" style="width:40%">{_("Model")}:</td><td class="fw-semibold">{model}</td></tr>
+        <tr><td class="text-muted">{_("Serial")}:</td><td class="fw-semibold">{serial}</td></tr>
+        <tr><td class="text-muted">{_("Firmware")}:</td><td class="fw-semibold">{firmware}</td></tr>
+        <tr><td class="text-muted">{_("Type")}:</td><td class="fw-semibold">{dev_type}</td></tr>
+        <tr><td class="text-muted">{_("Capacity")}:</td><td class="fw-semibold">{capacity}</td></tr>
+        <tr><td class="text-muted">SMART {_("Status")}:</td><td><span class="badge {smart_cls}">{smart_txt}</span></td></tr>
+        <tr><td class="text-muted">{_("Temperature")}:</td><td class="fw-semibold">{temp_str}</td></tr>
+        <tr><td class="text-muted">{_("Power On Hours")}:</td><td class="fw-semibold">{poh_str}</td></tr>
+        <tr><td class="text-muted">{_("Reallocated Sectors")}:</td><td class="fw-semibold {"text-danger" if (reallocated or 0) > 0 else ""}">{reallocated if reallocated is not None else "N/A"}</td></tr>
+        <tr><td class="text-muted">{_("Pending Sectors")}:</td><td class="fw-semibold {"text-warning" if (pending or 0) > 0 else ""}">{pending if pending is not None else "N/A"}</td></tr>
+        <tr><td class="text-muted">{_("Uncorrectable Sectors")}:</td><td class="fw-semibold {"text-danger" if (uncorrectable or 0) > 0 else ""}">{uncorrectable if uncorrectable is not None else "N/A"}</td></tr>
+      </table>
+    </div>'''
+
+    # SMART attributes table (ATA)
+    attrs = drive.get("smart_attributes") or []
+    if attrs:
+        attr_rows = []
+        for a in attrs:
+            attr_id = a.get("id", "")
+            attr_name = a.get("name", "")
+            attr_value = a.get("value", "")
+            attr_worst = a.get("worst", "")
+            attr_thresh = a.get("thresh", "")
+            attr_raw = a.get("raw", "")
+            attr_flags = a.get("flags", "")
+            # Highlight if value <= threshold
+            row_cls = ""
+            try:
+                if int(attr_value) <= int(attr_thresh) and int(attr_thresh) > 0:
+                    row_cls = ' class="table-danger"'
+            except (ValueError, TypeError):
+                pass
+            attr_rows.append(f'<tr{row_cls}><td>{attr_id}</td><td class="small">{attr_name}</td>'
+                             f'<td>{attr_value}</td><td>{attr_worst}</td><td>{attr_thresh}</td>'
+                             f'<td class="small">{attr_flags}</td><td class="fw-semibold">{attr_raw}</td></tr>')
+        html += f'''
+        <h6 class="fw-bold mt-3">SMART {_("Attributes")}</h6>
+        <div class="table-responsive"><table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr>
+          <th>ID</th><th>{_("Attribute")}</th><th>{_("Value")}</th><th>{_("Worst")}</th>
+          <th>{_("Threshold")}</th><th>{_("Flags")}</th><th>Raw</th>
+        </tr></thead><tbody>{"".join(attr_rows)}</tbody></table></div>'''
+
+    # NVMe health log fallback
+    smart_data = drive.get("smart_data") or {}
+    nvme_log = smart_data.get("nvme_smart_health_information_log")
+    if nvme_log and not attrs:
+        nvme_rows = []
+        for k, v in nvme_log.items():
+            label = k.replace("_", " ").title()
+            nvme_rows.append(f'<tr><td class="text-muted small">{label}</td><td class="fw-semibold">{v}</td></tr>')
+        html += f'''
+        <h6 class="fw-bold mt-3">NVMe Health Log</h6>
+        <div class="table-responsive"><table class="table table-sm mb-0">
+        <tbody>{"".join(nvme_rows)}</tbody></table></div>'''
+
     return HTMLResponse(content=html)
 
 
