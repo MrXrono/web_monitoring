@@ -26,7 +26,10 @@ from raid_agent.reporter import (
     get_commands,
     ack_command,
 )
-from raid_agent.installer import find_storcli, install_storcli, verify_storcli
+from raid_agent.installer import (
+    find_storcli, install_storcli, verify_storcli,
+    find_smartctl, install_smartctl, verify_smartctl,
+)
 from raid_agent.updater import check_update, do_update
 
 logger = logging.getLogger("raid_agent")
@@ -169,6 +172,36 @@ def ensure_storcli(config):
         return None
 
     return storcli_path
+
+
+def ensure_smartctl(config):
+    """Ensure smartctl binary is available.
+
+    Searches for the binary and attempts auto-install via package manager
+    if missing, then verifies it can execute.
+
+    Args:
+        config: Agent configuration dict.
+
+    Returns:
+        Path to smartctl binary, or None if unavailable.
+    """
+    smartctl_path = find_smartctl(config.get("smartctl_path", ""))
+
+    if smartctl_path is None:
+        logger.warning("smartctl not found on system, attempting auto-install...")
+        try:
+            smartctl_path = install_smartctl()
+            logger.info("smartctl installed at %s", smartctl_path)
+        except Exception:
+            logger.exception("Failed to auto-install smartctl (smartmontools)")
+            return None
+
+    if not verify_smartctl(smartctl_path):
+        logger.error("smartctl at %s failed verification", smartctl_path)
+        return None
+
+    return smartctl_path
 
 
 def do_register(config, config_path):
@@ -493,6 +526,11 @@ def daemon_loop(config, storcli_path):
     STORCLI_RECHECK_INTERVAL = 3600
     last_storcli_check = time.monotonic()
 
+    # Periodic smartctl re-check: every hour (3600s)
+    SMARTCTL_RECHECK_INTERVAL = 3600
+    last_smartctl_check = time.monotonic()
+    smartctl_path = ensure_smartctl(config) or ""
+
     # Start background command polling thread
     cmd_thread = threading.Thread(
         target=_command_poll_loop, args=(config,), daemon=True, name="cmd-poll"
@@ -514,6 +552,19 @@ def daemon_loop(config, storcli_path):
                 storcli_path = ""
             elif not new_path and not storcli_path:
                 logger.debug("storcli64 still not available, will retry in %ds", STORCLI_RECHECK_INTERVAL)
+
+        # Periodic smartctl availability check (every hour)
+        if cycle_start - last_smartctl_check >= SMARTCTL_RECHECK_INTERVAL or not smartctl_path:
+            last_smartctl_check = cycle_start
+            new_smartctl = ensure_smartctl(config)
+            if new_smartctl and new_smartctl != smartctl_path:
+                logger.info("smartctl path updated: %s -> %s", smartctl_path or "(none)", new_smartctl)
+                smartctl_path = new_smartctl
+            elif not new_smartctl and smartctl_path:
+                logger.warning("smartctl disappeared from %s, SMART collection disabled", smartctl_path)
+                smartctl_path = ""
+            elif not new_smartctl and not smartctl_path:
+                logger.debug("smartctl still not available, will retry in %ds", SMARTCTL_RECHECK_INTERVAL)
 
         # Run collection and reporting
         try:
@@ -586,6 +637,13 @@ def main(argv=None):
     if storcli_path is None:
         logger.warning("storcli64 is not available. Agent will run but RAID data collection is disabled.")
         storcli_path = ""
+
+    # Ensure smartctl is available
+    smartctl_path = ensure_smartctl(config)
+    if smartctl_path is None:
+        logger.warning("smartctl is not available. Agent will run but SMART data collection is disabled.")
+    else:
+        logger.info("smartctl available at %s", smartctl_path)
 
     # Handle --once mode
     if args.once:

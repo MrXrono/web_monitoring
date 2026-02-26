@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.4
+%define version     1.1.5
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -313,6 +313,12 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.5-1
+- Add: smartctl (smartmontools) auto-detection, auto-install via system package manager
+- Add: hourly smartctl availability re-check in daemon loop (same pattern as storcli)
+- Add: ensure_smartctl() with find/install/verify lifecycle
+- Supported package managers: dnf, yum, apt-get, zypper, apk, pacman
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.4-1
 - Fix: storcli download SSL error on self-signed certificates (verify=False like reporter)
 

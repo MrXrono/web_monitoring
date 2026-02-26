@@ -1,7 +1,8 @@
-"""storcli64 auto-installer for the RAID Monitor Agent.
+"""storcli64 and smartctl auto-installer for the RAID Monitor Agent.
 
 Handles locating, downloading, installing, and verifying the storcli64
-binary used for RAID controller data collection.
+binary used for RAID controller data collection, as well as the smartctl
+binary (from smartmontools) used for S.M.A.R.T. disk health monitoring.
 """
 
 import logging
@@ -272,6 +273,208 @@ def verify_storcli(path: str) -> bool:
 
     logger.error(
         "storcli64 verification failed: exit code %d, output: %s",
+        result.returncode,
+        output[:200],
+    )
+    return False
+
+
+# ---------------------------------------------------------------------------
+# smartctl (smartmontools) helpers
+# ---------------------------------------------------------------------------
+
+# Standard paths where smartctl may be installed
+SMARTCTL_SEARCH_PATHS = [
+    "/usr/sbin/smartctl",
+    "/usr/bin/smartctl",
+    "/usr/local/sbin/smartctl",
+    "/usr/local/bin/smartctl",
+    "/sbin/smartctl",
+]
+
+
+def find_smartctl(config_path: str = "") -> Optional[str]:
+    """Search for the smartctl binary on the system.
+
+    Search order:
+        1. Configured path (from config file)
+        2. Standard installation paths
+        3. System PATH (via ``which``)
+
+    Args:
+        config_path: Path from configuration, checked first if non-empty.
+
+    Returns:
+        Absolute path to smartctl binary, or None if not found.
+    """
+    # Check configured path first
+    if config_path and os.path.isfile(config_path) and os.access(config_path, os.X_OK):
+        logger.debug("smartctl found at configured path: %s", config_path)
+        return config_path
+
+    # Check standard paths
+    for path in SMARTCTL_SEARCH_PATHS:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            logger.debug("smartctl found at standard path: %s", path)
+            return path
+
+    # Check system PATH
+    which_path = shutil.which("smartctl")
+    if which_path:
+        logger.debug("smartctl found in PATH: %s", which_path)
+        return which_path
+
+    logger.warning("smartctl not found on system")
+    return None
+
+
+def _detect_package_manager() -> Optional[str]:
+    """Detect the system package manager.
+
+    Returns:
+        Package manager command name ('dnf', 'yum', 'apt-get', 'zypper',
+        'apk', or 'pacman'), or None if none found.
+    """
+    for pm in ("dnf", "yum", "apt-get", "zypper", "apk", "pacman"):
+        if shutil.which(pm):
+            return pm
+    return None
+
+
+def install_smartctl() -> str:
+    """Install smartmontools via the system package manager.
+
+    Detects the package manager and runs the appropriate install command.
+
+    Returns:
+        Path to the installed smartctl binary.
+
+    Raises:
+        RuntimeError: If no package manager is found or installation fails.
+    """
+    pm = _detect_package_manager()
+    if pm is None:
+        raise RuntimeError(
+            "Cannot install smartmontools: no supported package manager found"
+        )
+
+    pkg_name = "smartmontools"
+
+    if pm in ("dnf", "yum"):
+        cmd = [pm, "install", "-y", pkg_name]
+    elif pm == "apt-get":
+        # Run apt-get update first to refresh package lists
+        logger.info("Running apt-get update before installing smartmontools")
+        subprocess.run(
+            ["apt-get", "update", "-qq"],
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        cmd = ["apt-get", "install", "-y", "-qq", pkg_name]
+    elif pm == "zypper":
+        cmd = ["zypper", "--non-interactive", "install", pkg_name]
+    elif pm == "apk":
+        cmd = ["apk", "add", "--no-cache", pkg_name]
+    elif pm == "pacman":
+        cmd = ["pacman", "-S", "--noconfirm", pkg_name]
+    else:
+        raise RuntimeError(f"Unsupported package manager: {pm}")
+
+    logger.info("Installing smartmontools via %s: %s", pm, " ".join(cmd))
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("smartmontools installation timed out")
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"Package manager command failed: {exc}") from exc
+
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        stdout = result.stdout.strip()
+        # Some package managers return non-zero if already installed
+        if "already installed" in (stderr + stdout).lower():
+            logger.info("smartmontools is already installed")
+        else:
+            raise RuntimeError(
+                f"smartmontools install failed (exit {result.returncode}): "
+                f"{stderr or stdout}"
+            )
+
+    logger.info("smartmontools install output: %s", result.stdout.strip()[:200])
+
+    # Find the installed binary
+    installed_path = find_smartctl()
+    if installed_path is None:
+        raise RuntimeError(
+            "smartmontools installed but smartctl binary not found in standard paths"
+        )
+
+    logger.info("smartctl installed successfully at %s", installed_path)
+    return installed_path
+
+
+def verify_smartctl(path: str) -> bool:
+    """Verify that the smartctl binary at the given path can execute.
+
+    Runs ``smartctl --version`` and checks for a zero exit code.
+
+    Args:
+        path: Full path to the smartctl binary.
+
+    Returns:
+        True if smartctl executed successfully, False otherwise.
+    """
+    if not os.path.isfile(path):
+        logger.error("smartctl binary does not exist: %s", path)
+        return False
+
+    if not os.access(path, os.X_OK):
+        logger.error("smartctl binary is not executable: %s", path)
+        return False
+
+    logger.debug("Verifying smartctl: %s --version", path)
+
+    try:
+        result = subprocess.run(
+            [path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=VERIFY_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("smartctl verification timed out after %ds", VERIFY_TIMEOUT)
+        return False
+    except FileNotFoundError:
+        logger.error("smartctl binary not found: %s", path)
+        return False
+    except OSError as exc:
+        logger.error("smartctl verification failed: %s", exc)
+        return False
+
+    if result.returncode == 0:
+        logger.debug("smartctl verification passed")
+        return True
+
+    # smartctl --version typically returns 0, but check output as fallback
+    output = result.stdout + result.stderr
+    if "smartctl" in output.lower() or "smartmontools" in output.lower():
+        logger.debug(
+            "smartctl returned exit code %d but output looks valid",
+            result.returncode,
+        )
+        return True
+
+    logger.error(
+        "smartctl verification failed: exit code %d, output: %s",
         result.returncode,
         output[:200],
     )
