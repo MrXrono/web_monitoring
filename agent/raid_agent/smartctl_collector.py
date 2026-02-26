@@ -130,8 +130,13 @@ def collect_drive_smart(smartctl_path: str, device: str, dev_type: str = "", sca
     Returns:
         Structured dict with SMART data, or None on failure.
     """
-    args = ["-a", "--json", device]
-    if dev_type:
+    # For generic types (scsi, ata, sat) let smartctl auto-detect —
+    # e.g. a SAT drive behind SCSI bus needs ATA passthrough, not raw SCSI.
+    # Only force -d for special types like megaraid,N / nvme / cciss etc.
+    _AUTO_DETECT_TYPES = {"", "scsi", "ata", "sat"}
+    if dev_type.lower() in _AUTO_DETECT_TYPES:
+        args = ["-a", "--json", device]
+    else:
         args = ["-a", "--json", "-d", dev_type, device]
 
     data = _run_smartctl(smartctl_path, args)

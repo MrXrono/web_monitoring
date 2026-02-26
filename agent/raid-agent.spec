@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.9
+%define version     1.1.10
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -318,6 +318,10 @@ fi
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.9-1
 - Fix: filter RAID controller virtual drives exposed as SCSI devices (/dev/sdX)
 - Detect by vendor/product fields (AVAGO, LSI, DELL PERC, Broadcom)
+
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.10-1
+- Fix: let smartctl auto-detect drive type for scsi/ata/sat devices
+- Passing -d scsi broke SAT drives (ATA over SCSI) — no SMART data returned
 
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.8-1
 - Fix: exclude MegaRAID-managed drives from smartctl collection at agent level
