@@ -221,6 +221,7 @@ os.chmod(config_path, 0o600)
 
         if [ $? -eq 0 ]; then
             echo "Registration successful. Starting service..."
+            systemctl enable raid-agent.service 2>/dev/null || true
             systemctl start raid-agent.service 2>/dev/null || true
         else
             echo "WARNING: Auto-registration failed. Register manually:"
