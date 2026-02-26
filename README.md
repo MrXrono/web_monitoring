@@ -94,11 +94,11 @@ Or use the bundled script: `bash update-agent.sh https://<server>`
 
 ### Documentation
 
-Full setup guides are available in the **[Wiki](../../wiki)**:
+Full setup guides are available in the **[docs](docs/)** folder:
 
-- [Server Installation](../../wiki/Server-Installation)
-- [Agent Installation](../../wiki/Agent-Installation)
-- [Configuration Reference](../../wiki/Configuration-Reference)
+- [Server Installation](docs/Server-Installation.md)
+- [Agent Installation](docs/Agent-Installation.md)
+- [Configuration Reference](docs/Configuration-Reference.md)
 
 ### Tech Stack
 
@@ -198,11 +198,11 @@ curl -sk https://<сервер>/api/v1/agent/package/latest -o /tmp/raid-agent.r
 
 ### Документация
 
-Подробные инструкции доступны в **[Wiki](../../wiki)**:
+Подробные инструкции доступны в папке **[docs](docs/)**:
 
-- [Установка сервера](../../wiki/Server-Installation)
-- [Установка агента](../../wiki/Agent-Installation)
-- [Справочник конфигурации](../../wiki/Configuration-Reference)
+- [Установка сервера](docs/Server-Installation.md)
+- [Установка агента](docs/Agent-Installation.md)
+- [Справочник конфигурации](docs/Configuration-Reference.md)
 
 ### Стек технологий
 
