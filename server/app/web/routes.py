@@ -2015,10 +2015,14 @@ async def server_vd_partial(
     server_id: str,
     current_user: dict = Depends(_require_auth),
 ):
-    """Return virtual drives HTML partial for HTMX tab loading."""
+    """Return virtual drives HTML partial for HTMX tab loading.
+
+    Combines MegaRAID virtual drives and software RAID arrays into one view.
+    """
     from app.database import async_session
     from app.models.controller import Controller
     from app.models.virtual_drive import VirtualDrive
+    from app.models.software_raid import SoftwareRaid
 
     lang = _get_lang(request)
     _ = _make_gettext(lang)
@@ -2032,44 +2036,118 @@ async def server_vd_partial(
         )
         vds = result.scalars().all()
 
-    if not vds:
+        sr_result = await db.execute(
+            select(SoftwareRaid)
+            .where(SoftwareRaid.server_id == server_id)
+            .order_by(SoftwareRaid.array_name)
+        )
+        raids = sr_result.scalars().all()
+
+    if not vds and not raids:
         return HTMLResponse(
             f'<div class="text-center py-5 text-muted">'
             f'<p>{_("No virtual drives found for this server.")}</p></div>'
         )
 
-    rows = []
-    for vd in vds:
-        state_cls = {
-            "optl": "bg-success", "optimal": "bg-success",
-            "dgrd": "bg-warning text-dark", "degraded": "bg-warning text-dark",
-            "pdgd": "bg-danger", "ofln": "bg-danger",
-            "rec": "bg-info text-dark",
-        }.get((vd.state or "").lower(), "bg-secondary")
-        active_ops = vd.active_operations or ""
-        ops_html = (f'<span class="badge bg-info text-dark">{active_ops}</span>'
-                    if active_ops and active_ops.lower() != "none"
-                    else '<span class="text-muted small">None</span>')
-        rows.append(f'''<tr>
-          <td class="fw-semibold">{vd.dg_id or ""}/{vd.vd_id}</td>
-          <td>{vd.name or ""}</td><td>{vd.raid_type or ""}</td>
-          <td><span class="badge {state_cls}">{vd.state or "N/A"}</span></td>
-          <td class="text-nowrap">{vd.size or "N/A"}</td>
-          <td>{vd.cache_policy or "N/A"}</td>
-          <td>{vd.write_cache or "N/A"}</td>
-          <td>{vd.number_of_drives or 0}</td>
-          <td>{vd.span_depth or ""}</td>
-          <td>{ops_html}</td>
-        </tr>''')
+    html_parts = []
 
-    html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
-    <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
-    <thead class="table-light"><tr>
-      <th>VD#</th><th>{_("Name")}</th><th>RAID</th><th>{_("State")}</th>
-      <th>{_("Size")}</th><th>{_("Cache")}</th><th>{_("Write Cache")}</th><th>{_("Drives")}</th>
-      <th>{_("Spans")}</th><th>{_("Active Ops")}</th>
-    </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
-    return HTMLResponse(content=html)
+    # --- Section 1: MegaRAID Virtual Drives ---
+    if vds:
+        rows = []
+        for vd in vds:
+            state_cls = {
+                "optl": "bg-success", "optimal": "bg-success",
+                "dgrd": "bg-warning text-dark", "degraded": "bg-warning text-dark",
+                "pdgd": "bg-danger", "ofln": "bg-danger",
+                "rec": "bg-info text-dark",
+            }.get((vd.state or "").lower(), "bg-secondary")
+            active_ops = vd.active_operations or ""
+            ops_html = (f'<span class="badge bg-info text-dark">{active_ops}</span>'
+                        if active_ops and active_ops.lower() != "none"
+                        else '<span class="text-muted small">None</span>')
+            rows.append(f'''<tr>
+              <td class="fw-semibold">{vd.dg_id or ""}/{vd.vd_id}</td>
+              <td>{vd.name or ""}</td><td>{vd.raid_type or ""}</td>
+              <td><span class="badge {state_cls}">{vd.state or "N/A"}</span></td>
+              <td class="text-nowrap">{vd.size or "N/A"}</td>
+              <td>{vd.cache_policy or "N/A"}</td>
+              <td>{vd.write_cache or "N/A"}</td>
+              <td>{vd.number_of_drives or 0}</td>
+              <td>{vd.span_depth or ""}</td>
+              <td>{ops_html}</td>
+            </tr>''')
+
+        section_title = f'<h6 class="fw-bold mb-2">MegaRAID {_("Virtual Drives")}</h6>' if raids else ''
+        html_parts.append(f'''{section_title}<div class="card border-0 shadow-sm"><div class="card-body p-0">
+        <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>VD#</th><th>{_("Name")}</th><th>RAID</th><th>{_("State")}</th>
+          <th>{_("Size")}</th><th>{_("Cache")}</th><th>{_("Write Cache")}</th><th>{_("Drives")}</th>
+          <th>{_("Spans")}</th><th>{_("Active Ops")}</th>
+        </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>''')
+
+    # --- Section 2: Software RAID arrays ---
+    if raids:
+        rows = []
+        for sr in raids:
+            state_lower = (sr.state or "").lower()
+            if state_lower in ("active", "clean"):
+                state_cls = "bg-success"
+            elif state_lower in ("degraded", "inactive"):
+                state_cls = "bg-danger"
+            elif state_lower in ("rebuilding", "recovering", "resyncing"):
+                state_cls = "bg-warning text-dark"
+            else:
+                state_cls = "bg-secondary"
+
+            members_html = ""
+            if sr.member_devices:
+                mem_parts = []
+                for m in sr.member_devices:
+                    dev = m.get("device", "?")
+                    mstate = (m.get("state") or "").lower()
+                    if mstate == "faulty":
+                        mem_parts.append(f'<span class="badge bg-danger me-1">{dev}</span>')
+                    elif mstate == "spare":
+                        mem_parts.append(f'<span class="badge bg-info text-dark me-1">{dev}</span>')
+                    else:
+                        mem_parts.append(f'<span class="badge bg-success me-1">{dev}</span>')
+                members_html = " ".join(mem_parts)
+
+            rebuild_html = ""
+            if sr.rebuild_progress is not None:
+                pct = min(sr.rebuild_progress, 100)
+                rebuild_html = (
+                    f'<div class="progress" style="height: 16px; min-width: 80px;">'
+                    f'<div class="progress-bar bg-info" style="width: {pct:.1f}%">{pct:.1f}%</div></div>'
+                )
+            else:
+                rebuild_html = '<span class="text-muted">\u2014</span>'
+
+            failed_cls = " text-danger fw-bold" if (sr.failed_devices or 0) > 0 else ""
+
+            rows.append(f'''<tr>
+              <td class="fw-semibold">{sr.array_name}</td>
+              <td>{sr.raid_level or "N/A"}</td>
+              <td><span class="badge {state_cls}">{sr.state or "N/A"}</span></td>
+              <td class="text-nowrap">{sr.array_size or "N/A"}</td>
+              <td>{sr.active_devices if sr.active_devices is not None else "?"}/{sr.num_devices if sr.num_devices is not None else "?"}</td>
+              <td class="{failed_cls}">{sr.failed_devices or 0}</td>
+              <td>{sr.spare_devices or 0}</td>
+              <td>{rebuild_html}</td>
+              <td>{members_html}</td>
+            </tr>''')
+
+        section_title = f'<h6 class="fw-bold mb-2 {"mt-4" if vds else ""}">{_("Software RAID")}</h6>' if vds else ''
+        html_parts.append(f'''{section_title}<div class="card border-0 shadow-sm"><div class="card-body p-0">
+        <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>{_("Array")}</th><th>{_("Level")}</th><th>{_("State")}</th><th>{_("Size")}</th>
+          <th>{_("Drives")}</th><th>{_("Failed")}</th><th>{_("Spare")}</th>
+          <th>{_("Rebuild Progress")}</th><th>{_("Members")}</th>
+        </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>''')
+
+    return HTMLResponse(content="".join(html_parts))
 
 
 @router.get(

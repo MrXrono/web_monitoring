@@ -129,16 +129,6 @@
       </button>
     </li>
     <li class="nav-item" role="presentation">
-      <button class="nav-link" id="swraid-tab" data-bs-toggle="tab" data-bs-target="#swraid-pane"
-              type="button" role="tab" aria-controls="swraid-pane" aria-selected="false"
-              hx-get="/servers/{{ server.id }}/software-raids"
-              hx-target="#swraid-pane"
-              hx-swap="innerHTML"
-              hx-trigger="click once">
-        {{ _('Software RAID') }}
-      </button>
-    </li>
-    <li class="nav-item" role="presentation">
       <button class="nav-link" id="events-tab" data-bs-toggle="tab" data-bs-target="#events-pane"
               type="button" role="tab" aria-controls="events-pane" aria-selected="false"
               hx-get="/servers/{{ server.id }}/events"
@@ -284,15 +274,6 @@
       </div>
     </div>
 
-    <!-- Software RAID Tab (lazy loaded) -->
-    <div class="tab-pane fade" id="swraid-pane" role="tabpanel" aria-labelledby="swraid-tab">
-      <div class="text-center py-5">
-        <div class="spinner-border text-primary" role="status">
-          <span class="visually-hidden">{{ _('Loading...') }}</span>
-        </div>
-        <p class="text-muted mt-2">{{ _('Loading software RAID...') }}</p>
-      </div>
-    </div>
 
     <!-- Events Tab (lazy loaded) -->
     <div class="tab-pane fade" id="events-pane" role="tabpanel" aria-labelledby="events-tab">
