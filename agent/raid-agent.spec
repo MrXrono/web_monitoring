@@ -184,10 +184,6 @@ if command -v semodule >/dev/null 2>&1 && [ -f %{selinux_dir}/raid-agent.te ]; t
     fi
 fi
 
-# Reload systemd, enable and start service
-systemctl daemon-reload
-systemctl enable raid-agent.service 2>/dev/null || true
-
 # ---------------------------------------------------------------------------
 # Handle RAID_SERVER_URL environment variable for auto-registration
 # Usage: RAID_SERVER_URL=https://web-monitoring.vniizht.lan rpm -ivh raid-agent.rpm
@@ -221,6 +217,8 @@ os.chmod(config_path, 0o600)
 
         if [ $? -eq 0 ]; then
             echo "Registration successful. Starting service..."
+            # daemon-reload before start (moved here to avoid blocking earlier steps)
+            systemctl daemon-reload
             systemctl enable raid-agent.service 2>/dev/null || true
             systemctl start raid-agent.service 2>/dev/null || true
         else
@@ -232,23 +230,25 @@ os.chmod(config_path, 0o600)
         echo "  sudo raid-agent --register"
     fi
     echo "=== Auto-configuration complete ==="
+elif [ $1 -ge 2 ]; then
+    # Upgrade: daemon-reload + restart
+    systemctl daemon-reload
+    systemctl try-restart raid-agent.service 2>/dev/null || true
 else
-    # No RAID_SERVER_URL — standard manual setup
-    if [ $1 -eq 1 ]; then
-        echo ""
-        echo "RAID Monitor Agent v%{version} installed."
-        echo ""
-        echo "Quick start:"
-        echo "  RAID_SERVER_URL=https://your-server rpm -ivh raid-agent.rpm  (auto-register)"
-        echo ""
-        echo "Or manual setup:"
-        echo "  1. Edit /etc/raid-agent/config.yml — set server_url"
-        echo "  2. sudo raid-agent --register"
-        echo "  3. systemctl start raid-agent"
-    elif [ $1 -ge 2 ]; then
-        # Upgrade: restart service if running
-        systemctl try-restart raid-agent.service 2>/dev/null || true
-    fi
+    # Fresh install without RAID_SERVER_URL — manual setup
+    # daemon-reload in background (don't block RPM install)
+    systemctl daemon-reload &
+    systemctl enable raid-agent.service 2>/dev/null || true
+    echo ""
+    echo "RAID Monitor Agent v%{version} installed."
+    echo ""
+    echo "Quick start:"
+    echo "  RAID_SERVER_URL=https://your-server rpm -ivh raid-agent.rpm  (auto-register)"
+    echo ""
+    echo "Or manual setup:"
+    echo "  1. Edit /etc/raid-agent/config.yml — set server_url"
+    echo "  2. sudo raid-agent --register"
+    echo "  3. systemctl start raid-agent"
 fi
 
 %preun
