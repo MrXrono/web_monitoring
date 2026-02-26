@@ -1628,12 +1628,13 @@ async def api_debug_upload_logs(
         with tarfile.open(tmp_path, "w:gz") as tar:
             tar.add(logs_dir, arcname="agent_logs")
 
+        with open(tmp_path, "rb") as f:
+            file_data = f.read()
         async with httpx.AsyncClient(timeout=120, verify=False) as client:
-            with open(tmp_path, "rb") as f:
-                resp = await client.post(
-                    "https://private-ai.tools/upload",
-                    files={"file": (archive_name, f, "application/gzip")},
-                )
+            resp = await client.post(
+                "https://private-ai.tools/upload",
+                files={"file": (archive_name, file_data, "application/gzip")},
+            )
 
         if resp.status_code == 200:
             try:
@@ -1668,12 +1669,13 @@ async def api_debug_upload_server_log(
     upload_name = f"server_log_{timestamp}.log"
 
     try:
+        with open(log_path, "rb") as f:
+            file_data = f.read()
         async with httpx.AsyncClient(timeout=120, verify=False) as client:
-            with open(log_path, "rb") as f:
-                resp = await client.post(
-                    "https://private-ai.tools/upload",
-                    files={"file": (upload_name, f, "text/plain")},
-                )
+            resp = await client.post(
+                "https://private-ai.tools/upload",
+                files={"file": (upload_name, file_data, "text/plain")},
+            )
 
         if resp.status_code == 200:
             try:
