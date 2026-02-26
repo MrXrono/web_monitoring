@@ -129,6 +129,16 @@
       </button>
     </li>
     <li class="nav-item" role="presentation">
+      <button class="nav-link" id="swraid-tab" data-bs-toggle="tab" data-bs-target="#swraid-pane"
+              type="button" role="tab" aria-controls="swraid-pane" aria-selected="false"
+              hx-get="/servers/{{ server.id }}/software-raids"
+              hx-target="#swraid-pane"
+              hx-swap="innerHTML"
+              hx-trigger="click once">
+        {{ _('Software RAID') }}
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
       <button class="nav-link" id="events-tab" data-bs-toggle="tab" data-bs-target="#events-pane"
               type="button" role="tab" aria-controls="events-pane" aria-selected="false"
               hx-get="/servers/{{ server.id }}/events"
@@ -179,6 +189,17 @@
               <span class="{% if server.pd_ok is defined and server.pd_total is defined and server.pd_ok < server.pd_total %}text-danger{% else %}text-muted{% endif %}">{{ server.pd_total | default(0) }}</span>
             </div>
             <small class="text-muted">{{ _('Physical Drives') }}</small>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="card border-0 shadow-sm text-center p-3">
+            <div class="fs-3 fw-bold
+              {% if server.swraid_count is defined and server.swraid_count > 0 %}
+                {% if server.swraid_degraded is defined and server.swraid_degraded > 0 %}text-danger{% else %}text-primary{% endif %}
+              {% else %}text-muted{% endif %}">
+              {{ server.swraid_count | default(0) }}
+            </div>
+            <small class="text-muted">{{ _('Software RAID') }}</small>
           </div>
         </div>
         <div class="col-6 col-lg-3">
@@ -260,6 +281,16 @@
           <span class="visually-hidden">{{ _('Loading...') }}</span>
         </div>
         <p class="text-muted mt-2">{{ _('Loading physical drives...') }}</p>
+      </div>
+    </div>
+
+    <!-- Software RAID Tab (lazy loaded) -->
+    <div class="tab-pane fade" id="swraid-pane" role="tabpanel" aria-labelledby="swraid-tab">
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">{{ _('Loading...') }}</span>
+        </div>
+        <p class="text-muted mt-2">{{ _('Loading software RAID...') }}</p>
       </div>
     </div>
 

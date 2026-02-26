@@ -21,6 +21,7 @@ class Server(Base):
     kernel_version: Mapped[str | None] = mapped_column(String(128))
     agent_version: Mapped[str | None] = mapped_column(String(32))
     storcli_version: Mapped[str | None] = mapped_column(String(32))
+    smartctl_version: Mapped[str | None] = mapped_column(String(32))
     cpu_model: Mapped[str | None] = mapped_column(String(256))
     cpu_cores: Mapped[int | None] = mapped_column()
     ram_total_gb: Mapped[float | None] = mapped_column()
@@ -39,3 +40,4 @@ class Server(Base):
     api_key = relationship("ApiKey", back_populates="server", uselist=False, cascade="all, delete-orphan")
     controllers = relationship("Controller", back_populates="server", cascade="all, delete-orphan")
     alert_history = relationship("AlertHistory", back_populates="server", cascade="all, delete-orphan")
+    software_raids = relationship("SoftwareRaid", back_populates="server", cascade="all, delete-orphan")

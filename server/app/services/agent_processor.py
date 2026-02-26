@@ -23,6 +23,7 @@ from app.models import (
     PhysicalDrive,
     SmartHistory,
     ControllerEvent,
+    SoftwareRaid,
 )
 from app.services import alert_engine
 
@@ -76,6 +77,7 @@ def _compute_server_status(
     virtual_drives: list[dict],
     physical_drives: list[dict],
     bbu_data: list[dict],
+    software_raids: list[dict] | None = None,
 ) -> str:
     """
     Compute overall server health from component states.
@@ -139,6 +141,20 @@ def _compute_server_status(
         temp = bbu.get("temperature")
         if temp is not None and isinstance(temp, (int, float)) and temp > 50:
             component_statuses.append("warning")
+
+    # Software RAID arrays
+    for sr in (software_raids or []):
+        state = _normalize_status(sr.get("state"))
+        if state in ("degraded", "inactive"):
+            component_statuses.append("critical")
+        elif state in ("rebuilding", "recovering", "resyncing"):
+            component_statuses.append("warning")
+        elif state in ("active", "clean"):
+            component_statuses.append("ok")
+        else:
+            component_statuses.append("warning")
+        if (sr.get("failed_devices") or 0) > 0:
+            component_statuses.append("critical")
 
     if not component_statuses:
         return "unknown"
@@ -467,11 +483,83 @@ async def _upsert_server_info(
 
     server.agent_version = report.get("agent_version") or server.agent_version
     server.storcli_version = report.get("storcli_version") or server.storcli_version
+    server.smartctl_version = report.get("smartctl_version") or server.smartctl_version
     server.last_seen = datetime.now(MSK)
     server.last_report = report
     server.server_info = system_info or server.server_info
 
     await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Software RAID upsert
+# ---------------------------------------------------------------------------
+
+async def _upsert_software_raid(
+    db: AsyncSession,
+    server_id: uuid.UUID,
+    sr_data: dict,
+) -> SoftwareRaid:
+    """Upsert a software RAID array record."""
+    array_name = sr_data.get("array_name", "")
+
+    result = await db.execute(
+        select(SoftwareRaid).where(
+            and_(
+                SoftwareRaid.server_id == server_id,
+                SoftwareRaid.array_name == array_name,
+            )
+        )
+    )
+    sr = result.scalar_one_or_none()
+
+    if sr is None:
+        sr = SoftwareRaid(
+            server_id=server_id,
+            array_name=array_name,
+            state=sr_data.get("state", "unknown"),
+        )
+        db.add(sr)
+
+    sr.raid_level = sr_data.get("raid_level")
+    sr.state = sr_data.get("state", sr.state)
+    sr.array_size = sr_data.get("array_size")
+    sr.num_devices = sr_data.get("num_devices")
+    sr.active_devices = sr_data.get("active_devices")
+    sr.working_devices = sr_data.get("working_devices")
+    sr.failed_devices = sr_data.get("failed_devices")
+    sr.spare_devices = sr_data.get("spare_devices")
+    sr.rebuild_progress = sr_data.get("rebuild_progress")
+    sr.uuid_str = sr_data.get("uuid")
+    sr.creation_time = sr_data.get("creation_time")
+    sr.member_devices = [
+        {"device": m.get("device", ""), "role": m.get("role"), "state": m.get("state")}
+        for m in sr_data.get("member_devices", [])
+    ] if sr_data.get("member_devices") else sr.member_devices
+    sr.raw_data = sr_data.get("raw")
+
+    await db.flush()
+    return sr
+
+
+async def _remove_stale_software_raids(
+    db: AsyncSession,
+    server_id: uuid.UUID,
+    active_names: set[str],
+) -> int:
+    """Remove software RAID records that are no longer reported by the agent."""
+    result = await db.execute(
+        select(SoftwareRaid).where(SoftwareRaid.server_id == server_id)
+    )
+    all_raids = result.scalars().all()
+    removed = 0
+    for sr in all_raids:
+        if sr.array_name not in active_names:
+            await db.delete(sr)
+            removed += 1
+    if removed:
+        await db.flush()
+    return removed
 
 
 # ---------------------------------------------------------------------------
@@ -561,20 +649,34 @@ async def process_report(
                 server.hostname,
             )
 
-    # Compute overall server status
+    # Upsert software RAID arrays
+    all_sr_data: list[dict] = report.get("software_raid", [])
+    active_sr_names: set[str] = set()
+    for sr_data in all_sr_data:
+        active_sr_names.add(sr_data.get("array_name", ""))
+        await _upsert_software_raid(db, server_id, sr_data)
+
+    # Remove stale software RAID entries no longer reported
+    if all_sr_data:
+        removed_sr = await _remove_stale_software_raids(db, server_id, active_sr_names)
+        if removed_sr:
+            logger.info("Removed %d stale software RAID entries for %s", removed_sr, server.hostname)
+
+    # Compute overall server status (including software RAID)
     new_status = _compute_server_status(
-        all_ctrl_data, all_vd_data, all_pd_data, all_bbu_data
+        all_ctrl_data, all_vd_data, all_pd_data, all_bbu_data, all_sr_data
     )
     server.status = new_status
     await db.flush()
 
     logger.info(
-        "Report processed for %s: status=%s, controllers=%d, vds=%d, pds=%d",
+        "Report processed for %s: status=%s, controllers=%d, vds=%d, pds=%d, sw_raids=%d",
         server.hostname,
         new_status,
         len(all_ctrl_data),
         len(all_vd_data),
         len(all_pd_data),
+        len(all_sr_data),
     )
 
     # Trigger alert evaluation

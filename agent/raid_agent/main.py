@@ -31,6 +31,7 @@ from raid_agent.installer import (
     find_smartctl, install_smartctl, verify_smartctl,
 )
 from raid_agent.updater import check_update, do_update
+from raid_agent.smartctl_collector import collect_software_raid, get_smartctl_version
 
 logger = logging.getLogger("raid_agent")
 
@@ -259,12 +260,13 @@ def do_register(config, config_path):
     return True
 
 
-def run_collection_cycle(config, storcli_path):
+def run_collection_cycle(config, storcli_path, smartctl_path=""):
     """Execute a single data collection and reporting cycle.
 
     Args:
         config: Agent configuration dict.
         storcli_path: Path to storcli64 binary.
+        smartctl_path: Path to smartctl binary (optional).
 
     Returns:
         True if report was sent successfully, False otherwise.
@@ -302,6 +304,23 @@ def run_collection_cycle(config, storcli_path):
     }
     report["agent_version"] = __version__
     report["storcli_version"] = get_storcli_version(storcli_path)
+    report["smartctl_version"] = get_smartctl_version(smartctl_path) if smartctl_path else ""
+
+    # Collect software RAID + SMART data
+    try:
+        sw_data = collect_software_raid(smartctl_path)
+        report["software_raid"] = sw_data.get("software_raid_arrays", [])
+        report["smart_drives"] = sw_data.get("smart_drives", [])
+        logger.info(
+            "Software RAID: %d arrays, SMART: %d drives",
+            len(report["software_raid"]),
+            len(report["smart_drives"]),
+        )
+    except Exception:
+        logger.warning("Software RAID / SMART collection failed", exc_info=True)
+        report["software_raid"] = []
+        report["smart_drives"] = []
+
     report["cpu_model"] = sys_info.get("cpu_model", "")
     report["cpu_cores"] = sys_info.get("cpu_cores", 0)
     report["ram_total_gb"] = sys_info.get("ram_total_gb", 0.0)
@@ -395,8 +414,9 @@ def _execute_command(cmd, config):
     if cmd_type == "collect_now":
         logger.info("Server requested immediate collection")
         storcli_path = ensure_storcli(config)
+        smartctl_path = ensure_smartctl(config) or ""
         if storcli_path:
-            run_collection_cycle(config, storcli_path)
+            run_collection_cycle(config, storcli_path, smartctl_path)
         else:
             logger.error("Cannot collect: storcli64 not found")
 
@@ -568,7 +588,7 @@ def daemon_loop(config, storcli_path):
 
         # Run collection and reporting
         try:
-            run_collection_cycle(config, storcli_path)
+            run_collection_cycle(config, storcli_path, smartctl_path)
         except Exception:
             logger.exception("Unhandled error in collection cycle")
 

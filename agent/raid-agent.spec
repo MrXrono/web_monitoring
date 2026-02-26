@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.5
+%define version     1.1.6
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -63,6 +63,7 @@ cp -a raid_agent/system_info.py %{buildroot}%{install_dir}/raid_agent/
 cp -a raid_agent/reporter.py   %{buildroot}%{install_dir}/raid_agent/
 cp -a raid_agent/installer.py  %{buildroot}%{install_dir}/raid_agent/
 cp -a raid_agent/updater.py    %{buildroot}%{install_dir}/raid_agent/
+cp -a raid_agent/smartctl_collector.py %{buildroot}%{install_dir}/raid_agent/
 
 # Copy SELinux policy source
 cp -a raid_agent/selinux/*.te  %{buildroot}%{selinux_dir}/ 2>/dev/null || :
@@ -296,6 +297,7 @@ fi
 %{install_dir}/raid_agent/reporter.py
 %{install_dir}/raid_agent/installer.py
 %{install_dir}/raid_agent/updater.py
+%{install_dir}/raid_agent/smartctl_collector.py
 %{install_dir}/setup.py
 %{install_dir}/raid_agent/selinux/*
 
@@ -313,6 +315,16 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.6-1
+- Add: Software RAID (mdadm) monitoring — /proc/mdstat + mdadm --detail
+- Add: SMART data collection via smartctl for standalone drives
+- Add: smartctl_collector.py module (mdadm parser, smartctl JSON, ATA/NVMe support)
+- Add: Software RAID tab in web UI with state badges and rebuild progress
+- Add: SMART modal for physical drives (attributes table, NVMe health log)
+- Add: SoftwareRaid DB model with member_devices JSONB
+- Add: Server-side processing for software_raid and smart_drives in agent reports
+- Fix: smartctl_version tracked per server
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.5-1
 - Add: smartctl (smartmontools) auto-detection, auto-install via system package manager
 - Add: hourly smartctl availability re-check in daemon loop (same pattern as storcli)

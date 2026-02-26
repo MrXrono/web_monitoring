@@ -233,6 +233,32 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "Health": "Состояние",
         "Settings saved successfully.": "Настройки успешно сохранены.",
         "Toggle theme": "Переключить тему",
+        "Software RAID": "Программный RAID",
+        "Loading software RAID...": "Загрузка программного RAID...",
+        "No software RAID arrays found for this server.": "Программные RAID массивы для этого сервера не найдены.",
+        "Array": "Массив",
+        "Level": "Уровень",
+        "Failed": "Отказавшие",
+        "Spare": "Запасные",
+        "Rebuild Progress": "Прогресс ребилда",
+        "Members": "Участники",
+        "SMART Status": "Статус SMART",
+        "PASSED": "ПРОЙДЕН",
+        "FAILED": "НЕ ПРОЙДЕН",
+        "Power-On Hours": "Часы работы",
+        "Reallocated Sectors": "Переназначенные секторы",
+        "Pending Sectors": "Ожидающие секторы",
+        "Uncorrectable Sectors": "Неисправимые секторы",
+        "Attribute": "Атрибут",
+        "Value": "Значение",
+        "Worst": "Худшее",
+        "Threshold": "Порог",
+        "Raw Value": "Сырое значение",
+        "No SMART data available for this drive.": "Данные SMART для этого диска недоступны.",
+        "SmartCTL Version": "Версия SmartCTL",
+        "Device": "Устройство",
+        "Capacity": "Объём",
+        "Serial Number": "Серийный номер",
     },
     "en": {},
 }
@@ -323,7 +349,7 @@ def _base_context(request: Request, active_page: str = "", **extra) -> dict:
         "_": _make_gettext(lang),
         "active_page": active_page,
         "csrf_token": request.cookies.get("csrf_token", ""),
-        "version": "1.1.5",
+        "version": "1.1.6",
         "current_year": datetime.now().year,
         "active_alerts_count": 0,
         "current_user": None,
@@ -721,12 +747,15 @@ async def server_detail_page(
     from app.models.bbu import BbuUnit
     from sqlalchemy.orm import selectinload
 
+    from app.models.software_raid import SoftwareRaid as SoftwareRaidModel
+
     async with async_session() as db:
         result = await db.execute(
             select(Server).where(Server.id == server_id).options(
                 selectinload(Server.controllers).selectinload(Controller.virtual_drives),
                 selectinload(Server.controllers).selectinload(Controller.physical_drives),
                 selectinload(Server.controllers).selectinload(Controller.bbu),
+                selectinload(Server.software_raids),
             )
         )
         srv = result.unique().scalar_one_or_none()
@@ -819,6 +848,11 @@ async def server_detail_page(
         "vd_total": vd_total,
         "pd_ok": pd_ok,
         "pd_total": pd_total,
+        "swraid_count": len(srv.software_raids or []),
+        "swraid_degraded": sum(
+            1 for sr in (srv.software_raids or [])
+            if sr.state and sr.state.lower() in ("degraded", "inactive", "rebuilding")
+        ),
         "active_alerts": 0,
         "recent_events": [],
     }
@@ -2467,6 +2501,99 @@ async def alerts_rules_partial(
 
 
 @router.get(
+    "/servers/{server_id}/software-raids",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def server_software_raids_partial(
+    request: Request,
+    server_id: str,
+    current_user: dict = Depends(_require_auth),
+):
+    """Return software RAID HTML partial for HTMX tab loading."""
+    from app.database import async_session
+    from app.models.software_raid import SoftwareRaid
+
+    lang = _get_lang(request)
+    _ = _make_gettext(lang)
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(SoftwareRaid)
+            .where(SoftwareRaid.server_id == server_id)
+            .order_by(SoftwareRaid.array_name)
+        )
+        raids = result.scalars().all()
+
+    if not raids:
+        return HTMLResponse(
+            f'<div class="text-center py-5 text-muted">'
+            f'<p>{_("No software RAID arrays found for this server.")}</p></div>'
+        )
+
+    rows = []
+    for sr in raids:
+        state_lower = (sr.state or "").lower()
+        if state_lower in ("active", "clean"):
+            state_cls = "bg-success"
+        elif state_lower in ("degraded", "inactive"):
+            state_cls = "bg-danger"
+        elif state_lower in ("rebuilding", "recovering", "resyncing"):
+            state_cls = "bg-warning text-dark"
+        else:
+            state_cls = "bg-secondary"
+
+        # Member devices display
+        members_html = ""
+        if sr.member_devices:
+            mem_parts = []
+            for m in sr.member_devices:
+                dev = m.get("device", "?")
+                mstate = (m.get("state") or "").lower()
+                if mstate == "faulty":
+                    mem_parts.append(f'<span class="badge bg-danger me-1">{dev}</span>')
+                elif mstate == "spare":
+                    mem_parts.append(f'<span class="badge bg-info text-dark me-1">{dev}</span>')
+                else:
+                    mem_parts.append(f'<span class="badge bg-success me-1">{dev}</span>')
+            members_html = " ".join(mem_parts)
+
+        # Rebuild progress bar
+        rebuild_html = ""
+        if sr.rebuild_progress is not None:
+            pct = min(sr.rebuild_progress, 100)
+            rebuild_html = (
+                f'<div class="progress" style="height: 16px; min-width: 80px;">'
+                f'<div class="progress-bar bg-info" style="width: {pct:.1f}%">{pct:.1f}%</div></div>'
+            )
+        else:
+            rebuild_html = '<span class="text-muted">—</span>'
+
+        failed_cls = " text-danger fw-bold" if (sr.failed_devices or 0) > 0 else ""
+
+        rows.append(f'''<tr>
+          <td class="fw-semibold">{sr.array_name}</td>
+          <td>{sr.raid_level or "N/A"}</td>
+          <td><span class="badge {state_cls}">{sr.state or "N/A"}</span></td>
+          <td class="text-nowrap">{sr.array_size or "N/A"}</td>
+          <td>{sr.active_devices if sr.active_devices is not None else "?"}/{sr.num_devices if sr.num_devices is not None else "?"}</td>
+          <td class="{failed_cls}">{sr.failed_devices or 0}</td>
+          <td>{sr.spare_devices or 0}</td>
+          <td>{rebuild_html}</td>
+          <td>{members_html}</td>
+        </tr>''')
+
+    html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
+    <thead class="table-light"><tr>
+      <th>{_("Array")}</th><th>{_("Level")}</th><th>{_("State")}</th><th>{_("Size")}</th>
+      <th>{_("Drives")}</th><th>{_("Failed")}</th><th>{_("Spare")}</th>
+      <th>{_("Rebuild Progress")}</th><th>{_("Members")}</th>
+    </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
+    return HTMLResponse(content=html)
+
+
+@router.get(
     "/servers/{server_id}/physical-drives/{drive_id}/smart",
     response_class=HTMLResponse,
     include_in_schema=False,
@@ -2478,13 +2605,162 @@ async def server_pd_smart_partial(
     current_user: dict = Depends(_require_auth),
 ):
     """Return SMART data HTML partial for modal display."""
+    from app.database import async_session
+    from app.models.controller import Controller
+    from app.models.physical_drive import PhysicalDrive
+
     lang = _get_lang(request)
     _ = _make_gettext(lang)
 
-    html = f"""
-    <div class="text-center py-4">
-      <h6>{_("SMART Data")} - {drive_id}</h6>
-      <p class="text-muted">{_("No SMART data available for this drive.")}</p>
-    </div>
-    """
+    # Parse drive_id format: "enclosure_id:slot_number"
+    parts = drive_id.split(":")
+    if len(parts) != 2:
+        return HTMLResponse(
+            f'<div class="text-center py-4">'
+            f'<p class="text-muted">{_("No SMART data available for this drive.")}</p></div>'
+        )
+
+    try:
+        eid = int(parts[0])
+        slot = int(parts[1])
+    except ValueError:
+        return HTMLResponse(
+            f'<div class="text-center py-4">'
+            f'<p class="text-muted">{_("No SMART data available for this drive.")}</p></div>'
+        )
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(PhysicalDrive)
+            .join(Controller, PhysicalDrive.controller_id == Controller.id)
+            .where(
+                Controller.server_id == server_id,
+                PhysicalDrive.enclosure_id == eid,
+                PhysicalDrive.slot_number == slot,
+            )
+        )
+        pd = result.scalar_one_or_none()
+
+    if not pd or not pd.smart_data:
+        return HTMLResponse(
+            f'<div class="text-center py-4">'
+            f'<h6>{_("SMART Data")} — {drive_id}</h6>'
+            f'<p class="text-muted">{_("No SMART data available for this drive.")}</p></div>'
+        )
+
+    smart = pd.smart_data or {}
+
+    # Drive identity
+    model = pd.model or smart.get("model_name", "N/A")
+    serial = pd.serial_number or smart.get("serial_number", "N/A")
+    firmware = pd.firmware_version or smart.get("firmware_version", "N/A")
+
+    # SMART status
+    smart_status_obj = smart.get("smart_status", {})
+    passed = smart_status_obj.get("passed")
+    if passed is True:
+        status_badge = f'<span class="badge bg-success">{_("PASSED")}</span>'
+    elif passed is False:
+        status_badge = f'<span class="badge bg-danger">{_("FAILED")}</span>'
+    else:
+        status_badge = '<span class="badge bg-secondary">N/A</span>'
+
+    # Temperature
+    temp = pd.temperature
+    if temp is None:
+        temp_obj = smart.get("temperature", {})
+        if isinstance(temp_obj, dict):
+            temp = temp_obj.get("current")
+    temp_str = f"{temp} °C" if temp is not None else "N/A"
+
+    # Power-on hours
+    poh_obj = smart.get("power_on_time", {})
+    poh = poh_obj.get("hours") if isinstance(poh_obj, dict) else None
+    poh_str = f"{poh:,}" if poh is not None else "N/A"
+
+    # Key metrics from SMART attributes
+    realloc = smart.get("reallocated_sectors")
+    if realloc is None:
+        realloc = pd.smart_data.get("reallocated_sectors") if pd.smart_data else None
+    realloc_str = str(realloc) if realloc is not None else "N/A"
+
+    # Metrics header cards
+    header_html = f'''
+    <div class="mb-3">
+      <h6>{_("SMART Data")} — {drive_id}</h6>
+      <div class="row g-2 mb-2">
+        <div class="col-auto"><small class="text-muted">{_("Model")}:</small> <strong>{model}</strong></div>
+        <div class="col-auto"><small class="text-muted">{_("Serial Number")}:</small> <strong>{serial}</strong></div>
+        <div class="col-auto"><small class="text-muted">{_("Firmware")}:</small> <strong>{firmware}</strong></div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-auto"><small class="text-muted">{_("SMART Status")}:</small> {status_badge}</div>
+        <div class="col-auto"><small class="text-muted">{_("Temperature")}:</small> <strong>{temp_str}</strong></div>
+        <div class="col-auto"><small class="text-muted">{_("Power-On Hours")}:</small> <strong>{poh_str}</strong></div>
+        <div class="col-auto"><small class="text-muted">{_("Reallocated Sectors")}:</small> <strong>{realloc_str}</strong></div>
+      </div>
+    </div>'''
+
+    # SMART attributes table
+    ata_attrs = smart.get("ata_smart_attributes", {}).get("table", [])
+    if ata_attrs:
+        attr_rows = []
+        for attr in ata_attrs:
+            attr_id = attr.get("id", "")
+            name = attr.get("name", "")
+            value = attr.get("value", "")
+            worst = attr.get("worst", "")
+            thresh = attr.get("thresh", 0)
+            raw_obj = attr.get("raw", {})
+            raw_str = raw_obj.get("string", str(raw_obj.get("value", ""))) if isinstance(raw_obj, dict) else str(raw_obj)
+            type_obj = attr.get("type", {})
+            type_str = type_obj.get("string", "") if isinstance(type_obj, dict) else str(type_obj)
+            wf_obj = attr.get("when_failed", {})
+            wf_str = wf_obj.get("string", "") if isinstance(wf_obj, dict) else str(wf_obj or "")
+
+            row_cls = ""
+            if thresh and value and isinstance(value, (int, float)) and isinstance(thresh, (int, float)):
+                if value <= thresh:
+                    row_cls = ' class="table-danger"'
+
+            attr_rows.append(
+                f'<tr{row_cls}><td>{attr_id}</td><td>{name}</td><td>{value}</td>'
+                f'<td>{worst}</td><td>{thresh}</td><td class="small">{type_str}</td>'
+                f'<td class="small">{wf_str}</td><td class="small text-nowrap">{raw_str}</td></tr>'
+            )
+
+        attrs_html = f'''
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th>ID</th><th>{_("Attribute")}</th><th>{_("Value")}</th>
+                <th>{_("Worst")}</th><th>{_("Threshold")}</th><th>{_("Type")}</th>
+                <th>When Failed</th><th>{_("Raw Value")}</th>
+              </tr>
+            </thead>
+            <tbody>{"".join(attr_rows)}</tbody>
+          </table>
+        </div>'''
+    else:
+        # NVMe health log
+        nvme_log = smart.get("nvme_smart_health_information_log", {})
+        if nvme_log:
+            nvme_rows = []
+            for key, val in nvme_log.items():
+                label = key.replace("_", " ").title()
+                nvme_rows.append(f'<tr><td>{label}</td><td class="fw-semibold">{val}</td></tr>')
+            attrs_html = f'''
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+              <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light sticky-top">
+                  <tr><th>{_("Attribute")}</th><th>{_("Value")}</th></tr>
+                </thead>
+                <tbody>{"".join(nvme_rows)}</tbody>
+              </table>
+            </div>'''
+        else:
+            attrs_html = f'<p class="text-muted text-center">{_("No SMART data available for this drive.")}</p>'
+
+    html = header_html + attrs_html
     return HTMLResponse(content=html)

@@ -11,10 +11,12 @@ from app.models.user import User
 from app.models.setting import Setting
 from app.models.agent_package import AgentPackage
 from app.models.audit_log import AuditLog
+from app.models.software_raid import SoftwareRaid
 
 __all__ = [
     "Server", "ApiKey", "Controller", "BbuUnit",
     "VirtualDrive", "PhysicalDrive", "SmartHistory",
     "ControllerEvent", "AlertRule", "AlertHistory",
     "User", "Setting", "AgentPackage", "AuditLog",
+    "SoftwareRaid",
 ]

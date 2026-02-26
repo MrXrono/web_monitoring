@@ -128,9 +128,50 @@ class ControllerReport(BaseModel):
     raw: Optional[dict] = None
 
 
+class SoftwareRaidMember(BaseModel):
+    device: str
+    role: Optional[str] = None
+    state: Optional[str] = None
+
+
+class SoftwareRaidReport(BaseModel):
+    array_name: str
+    raid_level: Optional[str] = None
+    state: Optional[str] = None
+    array_size: Optional[str] = None
+    num_devices: Optional[int] = None
+    active_devices: Optional[int] = None
+    working_devices: Optional[int] = None
+    failed_devices: Optional[int] = None
+    spare_devices: Optional[int] = None
+    rebuild_progress: Optional[float] = None
+    uuid: Optional[str] = None
+    creation_time: Optional[str] = None
+    member_devices: list[SoftwareRaidMember] = []
+    raw: Optional[dict] = None
+
+
+class SmartDriveReport(BaseModel):
+    device: str
+    model: Optional[str] = None
+    serial_number: Optional[str] = None
+    firmware_version: Optional[str] = None
+    device_type: Optional[str] = None
+    capacity: Optional[str] = None
+    smart_status: Optional[bool] = None
+    temperature: Optional[int] = None
+    power_on_hours: Optional[int] = None
+    reallocated_sectors: Optional[int] = None
+    pending_sectors: Optional[int] = None
+    uncorrectable_sectors: Optional[int] = None
+    smart_attributes: Optional[list[dict]] = None
+    smart_data: Optional[dict] = None
+
+
 class AgentReportPayload(BaseModel):
     agent_version: Optional[str] = None
     storcli_version: Optional[str] = None
+    smartctl_version: Optional[str] = None
     hostname: str
     fqdn: Optional[str] = None
     ip_address: str
@@ -142,6 +183,8 @@ class AgentReportPayload(BaseModel):
     last_os_update: Optional[str] = None
     collected_at: Optional[str] = None
     controllers: list[ControllerReport] = []
+    software_raid: list[SoftwareRaidReport] = []
+    smart_drives: list[SmartDriveReport] = []
 
 
 class AgentConfigResponse(BaseModel):

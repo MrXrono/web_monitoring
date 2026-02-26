@@ -249,6 +249,8 @@ async def migrate_add_columns():
         ("bbu_units", "capacitance", "VARCHAR(32)"),
         ("bbu_units", "pack_energy", "VARCHAR(32)"),
         ("bbu_units", "flash_size", "VARCHAR(32)"),
+        # servers
+        ("servers", "smartctl_version", "VARCHAR(32)"),
         # users
         ("users", "theme", "VARCHAR(10) NOT NULL DEFAULT 'light'"),
     ]
@@ -420,7 +422,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="RAID Monitor",
         description="RAID Controller Monitoring System",
-        version="1.1.5",
+        version="1.1.6",
         lifespan=lifespan,
         docs_url="/api/docs" if settings.DEBUG else None,
         redoc_url="/api/redoc" if settings.DEBUG else None,
