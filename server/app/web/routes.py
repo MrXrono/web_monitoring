@@ -839,9 +839,8 @@ async def server_detail_page(
         if smart_drives_list:
             smart_total = len(smart_drives_list)
             smart_ok = sum(1 for d in smart_drives_list if d.get("smart_status") is not False)
-            if smart_total > pd_total:
-                pd_total = smart_total
-                pd_ok = smart_ok
+            pd_total += smart_total
+            pd_ok += smart_ok
 
     uptime_str = "N/A"
     if srv.uptime_seconds:
