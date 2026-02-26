@@ -9,7 +9,8 @@ import logging
 import os
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
+from app.config import MSK
 from pathlib import Path
 from typing import Any
 
@@ -101,11 +102,11 @@ def _parse_certificate(cert_data: bytes) -> dict[str, Any]:
     not_after = cert.not_valid_after_utc if hasattr(cert, "not_valid_after_utc") else cert.not_valid_after
     not_before = cert.not_valid_before_utc if hasattr(cert, "not_valid_before_utc") else cert.not_valid_before
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(MSK)
     if not_after.tzinfo is None:
-        not_after = not_after.replace(tzinfo=timezone.utc)
+        not_after = not_after.replace(tzinfo=MSK)
     if not_before.tzinfo is None:
-        not_before = not_before.replace(tzinfo=timezone.utc)
+        not_before = not_before.replace(tzinfo=MSK)
 
     days_remaining = (not_after - now).days
     is_expired = days_remaining < 0

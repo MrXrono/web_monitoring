@@ -1,7 +1,8 @@
 import hashlib
 import logging
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime
+from app.config import MSK
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
@@ -404,7 +405,7 @@ async def collect_all_logs(
         command = {
             "id": cmd_id,
             "type": "collect_logs",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(MSK).isoformat(),
         }
         server_info = srv.server_info or {}
         pending = server_info.get("pending_commands", [])
@@ -442,7 +443,7 @@ async def upload_logs_external(
         )
 
     # Create tar.gz archive of all logs
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(MSK).strftime("%Y%m%d_%H%M%S")
     archive_name = f"agent_logs_{timestamp}.tar.gz"
 
     with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:

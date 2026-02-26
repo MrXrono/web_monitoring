@@ -119,7 +119,15 @@
             </form>
         </div>
         <div class="card-footer text-center py-3 rounded-bottom">
-            <small class="text-muted">RAID Monitor v{{ version | default('1.0.0') }}</small>
+            <small class="text-muted">
+                RAID Monitor v{{ version | default('1.0.0') }} &copy; {{ current_year | default('2026') }}
+                <br>
+                <a href="https://github.com/MrXrono/web_monitoring" target="_blank" rel="noopener" class="text-muted text-decoration-none"><i class="bi bi-github"></i> GitHub</a>
+                &middot;
+                <a href="mailto:mrxrono@gmail.com" class="text-muted text-decoration-none"><i class="bi bi-envelope"></i></a>
+                &middot;
+                <a href="https://t.me/MrXrono" target="_blank" rel="noopener" class="text-muted text-decoration-none"><i class="bi bi-telegram"></i></a>
+            </small>
         </div>
     </div>
 

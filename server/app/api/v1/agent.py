@@ -1,7 +1,8 @@
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from app.config import MSK
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, status
@@ -109,7 +110,7 @@ async def receive_report(
     Receive a full status report from an agent.
     Updates server metadata, controllers, VDs, PDs, BBU, events, and SMART history.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(MSK)
 
     # Update server metadata
     server.hostname = payload.hostname
@@ -495,7 +496,7 @@ async def upload_agent_logs(
     uploads_dir = Path(settings.UPLOADS_DIR) / "agent_logs" / str(server.id)
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(MSK).strftime("%Y%m%d_%H%M%S")
     safe_filename = f"{server.hostname}_{timestamp}_{file.filename}"
     file_path = uploads_dir / safe_filename
 
@@ -538,7 +539,7 @@ async def acknowledge_command(
         executed = server.server_info.get("executed_commands", [])
         for cmd in pending:
             if cmd.get("id") == cmd_id:
-                cmd["acked_at"] = datetime.now(timezone.utc).isoformat()
+                cmd["acked_at"] = datetime.now(MSK).isoformat()
                 executed.append(cmd)
                 break
 

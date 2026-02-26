@@ -4,7 +4,8 @@ import secrets
 import logging
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from app.config import MSK
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -55,7 +56,7 @@ def generate_env_file():
     encryption_key = secrets.token_hex(16)
 
     env_content = f"""# RAID Monitor - Auto-generated configuration
-# Generated at: {datetime.now(timezone.utc).isoformat()}
+# Generated at: {datetime.now(MSK).isoformat()}
 
 POSTGRES_DB=raidmonitor
 POSTGRES_USER=raidmonitor
@@ -112,8 +113,8 @@ def generate_self_signed_cert():
             .issuer_name(issuer)
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.now(timezone.utc))
-            .not_valid_after(datetime.now(timezone.utc) + timedelta(days=3650))
+            .not_valid_before(datetime.now(MSK))
+            .not_valid_after(datetime.now(MSK) + timedelta(days=3650))
             .add_extension(x509.SubjectAlternativeName([
                 x509.DNSName("localhost"),
                 x509.DNSName("raid-monitor"),
@@ -333,7 +334,7 @@ async def check_admin_expiry():
         )
         admin = result.scalar_one_or_none()
         if admin and admin.local_admin_expires:
-            if datetime.now(timezone.utc) > admin.local_admin_expires:
+            if datetime.now(MSK) > admin.local_admin_expires:
                 admin.is_active = False
                 admin.local_admin_expires = None
                 await db.commit()
@@ -402,7 +403,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="RAID Monitor",
         description="RAID Controller Monitoring System",
-        version="1.0.0",
+        version="1.0.5",
         lifespan=lifespan,
         docs_url="/api/docs" if settings.DEBUG else None,
         redoc_url="/api/redoc" if settings.DEBUG else None,

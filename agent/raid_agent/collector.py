@@ -902,7 +902,8 @@ def _resolve_relative_event_times(events: List[Dict[str, Any]]) -> None:
     Events with absolute time are left unchanged. The internal
     _seconds_since_reboot field is removed after processing.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
+    MSK = timezone(timedelta(hours=3), "MSK")
 
     # Check if any events need timestamp resolution
     need_resolution = [e for e in events if "_seconds_since_reboot" in e]
@@ -914,7 +915,7 @@ def _resolve_relative_event_times(events: List[Dict[str, Any]]) -> None:
     try:
         with open("/proc/uptime", "r") as f:
             uptime_secs = float(f.read().split()[0])
-        boot_time = datetime.now() - timedelta(seconds=uptime_secs)
+        boot_time = datetime.now(MSK) - timedelta(seconds=uptime_secs)
     except Exception:
         logger.debug("Cannot read /proc/uptime for event time resolution")
 

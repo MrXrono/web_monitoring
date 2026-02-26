@@ -127,8 +127,9 @@ async def verify_agent_key(
         )
 
     # Update last_used_at
-    from datetime import datetime, timezone
-    matched_api_key.last_used_at = datetime.now(timezone.utc)
+    from datetime import datetime
+    from app.config import MSK
+    matched_api_key.last_used_at = datetime.now(MSK)
     await db.commit()
 
     # Load associated server

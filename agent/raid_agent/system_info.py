@@ -256,12 +256,12 @@ def _get_last_os_update() -> Optional[str]:
     Returns:
         Date string in ``DD.MM.YYYY HH:MM:SS`` format, or None.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
+    MSK = timezone(timedelta(hours=3), "MSK")
 
     def _fmt(dt: datetime) -> str:
-        local = dt.astimezone()
-        tz_name = local.strftime("%Z") or "UTC"
-        return local.strftime(f"%d.%m.%Y %H:%M:%S {tz_name}")
+        msk = dt.astimezone(MSK)
+        return msk.strftime("%d.%m.%Y %H:%M:%S MSK")
 
     # Method 1: dnf history — look for update/upgrade transactions
     try:
@@ -290,7 +290,7 @@ def _get_last_os_update() -> Optional[str]:
                         try:
                             dt = datetime.strptime(date_str, fmt)
                             if dt.tzinfo is None:
-                                dt = dt.replace(tzinfo=timezone.utc).astimezone()
+                                dt = dt.replace(tzinfo=MSK)
                             return _fmt(dt)
                         except ValueError:
                             continue
@@ -304,7 +304,7 @@ def _get_last_os_update() -> Optional[str]:
         dnf_history = "/var/lib/dnf/history/"
         if os.path.isdir(dnf_history):
             mtime = os.stat(dnf_history).st_mtime
-            dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            dt = datetime.fromtimestamp(mtime, tz=MSK)
             return _fmt(dt)
     except (OSError, ValueError):
         pass
@@ -314,7 +314,7 @@ def _get_last_os_update() -> Optional[str]:
         yum_history = "/var/lib/yum/history/"
         if os.path.isdir(yum_history):
             mtime = os.stat(yum_history).st_mtime
-            dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+            dt = datetime.fromtimestamp(mtime, tz=MSK)
             return _fmt(dt)
     except (OSError, ValueError):
         pass

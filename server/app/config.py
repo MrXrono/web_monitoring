@@ -1,7 +1,11 @@
 import os
 import secrets
+from datetime import timezone, timedelta
 from pathlib import Path
 from pydantic_settings import BaseSettings
+
+# Moscow timezone (UTC+3) — used throughout the application
+MSK = timezone(timedelta(hours=3), name="MSK")
 
 
 class Settings(BaseSettings):

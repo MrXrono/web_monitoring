@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from app.config import MSK
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy import select, func, case
@@ -104,7 +105,7 @@ async def dashboard_health(
     Get health overview for all servers.
     Returns each server with a computed health status based on its components.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(MSK)
     offline_threshold = now - timedelta(minutes=15)
 
     result = await db.execute(

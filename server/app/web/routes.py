@@ -6,7 +6,8 @@ All Jinja2 template rendering routes for the frontend.
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from app.config import MSK
 from typing import Optional
 
 import logging
@@ -321,7 +322,7 @@ def _base_context(request: Request, active_page: str = "", **extra) -> dict:
         "_": _make_gettext(lang),
         "active_page": active_page,
         "csrf_token": request.cookies.get("csrf_token", ""),
-        "version": "1.0.0",
+        "version": "1.0.5",
         "current_year": datetime.now().year,
         "active_alerts_count": 0,
         "current_user": None,
@@ -363,7 +364,6 @@ async def login_submit(
     """Handle login form submission."""
     import bcrypt as _bcrypt
     from jose import jwt
-    from datetime import timedelta, timezone
     from app.config import settings
     from app.database import async_session
     from app.models.user import User
@@ -413,7 +413,7 @@ async def login_submit(
                         user.email = ldap_result.get("email") or user.email
                         user.auth_source = "ldap"
                         user.is_admin = ldap_result.get("is_admin", False)
-                    user.last_login = datetime.now(timezone.utc)
+                    user.last_login = datetime.now(MSK)
                     await db.commit()
                     await db.refresh(user)
                     authenticated = True
@@ -425,7 +425,7 @@ async def login_submit(
             return templates.TemplateResponse("login.html", ctx)
 
         # Create JWT token
-        expire = datetime.now(timezone.utc) + timedelta(hours=24)
+        expire = datetime.now(MSK) + timedelta(hours=24)
         token_data = {
             "sub": user.username,
             "uid": str(user.id),
@@ -1028,7 +1028,7 @@ async def settings_page(
                     storcli_packages.append({
                         "filename": fname,
                         "size": _format_file_size(fstat.st_size),
-                        "uploaded_at": datetime.fromtimestamp(fstat.st_mtime).strftime("%d.%m.%Y %H:%M"),
+                        "uploaded_at": datetime.fromtimestamp(fstat.st_mtime, tz=MSK).strftime("%d.%m.%Y %H:%M"),
                     })
         extra["storcli_packages"] = storcli_packages
 
@@ -1093,7 +1093,6 @@ def _format_file_size(size_bytes: int) -> str:
 def _get_ssl_info() -> dict:
     """Read SSL certificate info from nginx_ssl volume."""
     import ssl as _ssl
-    from datetime import timezone
 
     cert_path = "/app/nginx_ssl/server.crt"
     if not os.path.exists(cert_path):
@@ -1110,7 +1109,7 @@ def _get_ssl_info() -> dict:
         issuer = cert.get_issuer()
         not_after = datetime.strptime(cert.get_notAfter().decode("ascii"), "%Y%m%d%H%M%SZ")
         not_before = datetime.strptime(cert.get_notBefore().decode("ascii"), "%Y%m%d%H%M%SZ")
-        days_left = (not_after - datetime.utcnow()).days
+        days_left = (not_after - datetime.now(MSK)).days
         return {
             "subject": f"CN={subject.CN}" if subject.CN else str(subject),
             "issuer": f"CN={issuer.CN}" if issuer.CN else str(issuer),
@@ -1486,7 +1485,7 @@ async def api_debug_collect_all(
             pending.append({
                 "id": cmd_id,
                 "type": "upload_logs",
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(MSK).isoformat(),
             })
             server_info["pending_commands"] = pending
             srv.server_info = server_info
@@ -1510,7 +1509,7 @@ async def api_debug_upload_logs(
     if not os.path.exists(logs_dir) or not os.listdir(logs_dir):
         return {"success": False, "message": "No agent logs found to upload"}
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(MSK).strftime("%Y%m%d_%H%M%S")
     archive_name = f"agent_logs_{timestamp}.tar.gz"
 
     with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
@@ -1556,7 +1555,7 @@ async def api_debug_upload_server_log(
     if not os.path.exists(log_path):
         return {"success": False, "message": f"Log file not found: {log_path}"}
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(MSK).strftime("%Y%m%d_%H%M%S")
     upload_name = f"server_log_{timestamp}.log"
 
     try:
@@ -1672,7 +1671,7 @@ async def api_agent_debug_toggle(
             "id": _secrets.token_hex(8),
             "type": "update_config",
             "params": {"debug": enabled},
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(MSK).isoformat(),
         })
         server_info["pending_commands"] = pending
         server.server_info = server_info
@@ -1703,7 +1702,7 @@ async def api_agent_collect_logs(
         pending.append({
             "id": _secrets.token_hex(8),
             "type": "upload_logs",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(MSK).isoformat(),
         })
         server_info["pending_commands"] = pending
         server.server_info = server_info

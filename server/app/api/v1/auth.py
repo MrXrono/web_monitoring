@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from app.config import MSK
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from jose import jwt
@@ -24,7 +25,7 @@ ACCESS_TOKEN_EXPIRE_HOURS = 24
 def _create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a signed JWT token."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS))
+    expire = datetime.now(MSK) + (expires_delta or timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=JWT_ALGORITHM)
 
@@ -172,7 +173,7 @@ async def _try_ldap_auth(username: str, password: str, db: AsyncSession) -> User
             user.is_admin = is_admin
             logger.info("LDAP user '%s' updated locally (admin=%s)", username, is_admin)
 
-        user.last_login = datetime.now(timezone.utc)
+        user.last_login = datetime.now(MSK)
         await db.commit()
         await db.refresh(user)
         return user
@@ -214,13 +215,13 @@ async def login(
                     detail="User account is disabled",
                 )
             # Check local admin expiry
-            if user.local_admin_expires and user.local_admin_expires < datetime.now(timezone.utc):
+            if user.local_admin_expires and user.local_admin_expires < datetime.now(MSK):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Local admin account has expired. Configure LDAP authentication.",
                 )
             authenticated = True
-            user.last_login = datetime.now(timezone.utc)
+            user.last_login = datetime.now(MSK)
             await db.commit()
             await db.refresh(user)
 

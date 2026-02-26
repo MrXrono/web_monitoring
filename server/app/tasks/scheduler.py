@@ -1,6 +1,7 @@
 """Background task scheduler for RAID Monitor."""
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from app.config import MSK
 
 from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +27,7 @@ async def cleanup_old_data():
             setting = result.scalar_one_or_none()
             retention_days = int(setting.value) if setting and setting.value else 90
 
-            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+            cutoff = datetime.now(MSK) - timedelta(days=retention_days)
 
             # Delete old SMART history
             from sqlalchemy import delete
@@ -42,7 +43,7 @@ async def cleanup_old_data():
             events_deleted = result.rowcount
 
             # Delete old resolved alerts (keep 365 days)
-            alert_cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+            alert_cutoff = datetime.now(MSK) - timedelta(days=365)
             result = await db.execute(
                 delete(AlertHistory).where(
                     and_(AlertHistory.is_resolved == True, AlertHistory.created_at < alert_cutoff)

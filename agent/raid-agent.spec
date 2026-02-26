@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.4
+%define version     1.0.5
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -206,6 +206,15 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.5-1
+- All timestamps switched to Moscow timezone (MSK, UTC+3)
+- Docker containers configured with TZ=Europe/Moscow
+- PostgreSQL timezone set to Europe/Moscow via PGTZ
+- Agent systemd service configured with TZ=Europe/Moscow
+- Telegram notifications now display MSK instead of UTC
+- Footer: added GitHub link, contacts, proprietary license notice
+- Added LICENSE file (Proprietary, all rights reserved)
+
 * Tue Feb 25 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.4-1
 - Fix: CacheVault data collection — /cx/cv show all J now executed correctly
 - BBU/CV fallback logic rewritten: try BBU first, then CV, then controller fallback

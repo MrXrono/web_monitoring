@@ -7,7 +7,8 @@ resolves cleared conditions, and triggers Telegram notifications.
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from app.config import MSK
 from typing import Any
 
 from sqlalchemy import select, and_, or_, update
@@ -705,10 +706,10 @@ def _eval_agent_offline(rule: AlertRule, server: Server) -> _RuleMatch | None:
             message=f"Agent on {server.hostname} has never reported",
             context={"minutes": minutes},
         )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(MSK)
     last_seen = server.last_seen
     if last_seen.tzinfo is None:
-        last_seen = last_seen.replace(tzinfo=timezone.utc)
+        last_seen = last_seen.replace(tzinfo=MSK)
     delta = now - last_seen
     if delta > timedelta(minutes=minutes):
         return _RuleMatch(
@@ -863,7 +864,7 @@ async def _check_cooldown(
 
     Returns True if the alert should be suppressed (within cooldown).
     """
-    cooldown_cutoff = datetime.now(timezone.utc) - timedelta(minutes=rule.cooldown_minutes)
+    cooldown_cutoff = datetime.now(MSK) - timedelta(minutes=rule.cooldown_minutes)
 
     stmt = select(AlertHistory).where(
         and_(
@@ -931,7 +932,7 @@ async def _resolve_cleared_alerts(
 
     active_sigs = {_ctx_sig(m.context) for m in current_matches}
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(MSK)
     for alert in open_alerts:
         alert_sig = _ctx_sig(alert.context or {})
         if alert_sig not in active_sigs:

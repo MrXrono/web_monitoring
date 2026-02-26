@@ -1,7 +1,8 @@
 import logging
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from app.config import MSK
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, delete
@@ -355,7 +356,7 @@ async def collect_logs(
     command = {
         "id": cmd_id,
         "type": "collect_logs",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(MSK).isoformat(),
     }
 
     server_info = server.server_info or {}

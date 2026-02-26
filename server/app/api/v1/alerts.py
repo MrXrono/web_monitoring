@@ -1,7 +1,8 @@
 import logging
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from app.config import MSK
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, and_, case
@@ -239,7 +240,7 @@ async def resolve_alert(
         return {"status": "ok", "message": "Alert already resolved"}
 
     alert.is_resolved = True
-    alert.resolved_at = datetime.now(timezone.utc)
+    alert.resolved_at = datetime.now(MSK)
     await db.commit()
 
     return {"status": "ok", "message": "Alert resolved"}

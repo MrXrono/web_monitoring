@@ -2,6 +2,8 @@ services:
   nginx:
     image: nginx:1.25-alpine
     container_name: rm-nginx
+    environment:
+      TZ: Europe/Moscow
     ports:
       - "443:443"
       - "80:80"
@@ -29,6 +31,8 @@ services:
         - HTTPS_PROXY=${BUILD_PROXY:-}
         - ALL_PROXY=${BUILD_PROXY:-}
     container_name: rm-web
+    environment:
+      TZ: Europe/Moscow
     env_file:
       - .env
     volumes:
@@ -55,6 +59,8 @@ services:
     image: postgres:16-alpine
     container_name: rm-postgres
     environment:
+      TZ: Europe/Moscow
+      PGTZ: Europe/Moscow
       POSTGRES_DB: ${POSTGRES_DB:-raidmonitor}
       POSTGRES_USER: ${POSTGRES_USER:-raidmonitor}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}

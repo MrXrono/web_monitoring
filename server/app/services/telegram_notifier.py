@@ -4,7 +4,8 @@ Telegram notification service.
 Sends alert messages to a configured Telegram chat via the Bot API.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+from app.config import MSK
 
 import httpx
 
@@ -49,8 +50,8 @@ def _format_alert_message(alert, server) -> str:
     """
     emoji = SEVERITY_EMOJI.get(alert.severity, "\u2753")
     severity_label = alert.severity.upper()
-    timestamp = alert.created_at or datetime.now(timezone.utc)
-    ts_str = timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+    timestamp = alert.created_at or datetime.now(MSK)
+    ts_str = timestamp.strftime("%Y-%m-%d %H:%M:%S MSK")
 
     lines = [
         f"{emoji} <b>RAID Monitor Alert</b> [{severity_label}]",
@@ -79,7 +80,7 @@ def _format_alert_message(alert, server) -> str:
 
 def _format_resolve_message(alert, server) -> str:
     """Format a resolution notification message."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    timestamp = datetime.now(MSK).strftime("%Y-%m-%d %H:%M:%S MSK")
     return (
         f"\u2705 <b>Alert Resolved</b>\n"
         f"\n"

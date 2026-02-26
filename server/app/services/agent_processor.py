@@ -8,7 +8,8 @@ health status, and triggers alert evaluation.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from app.config import MSK
 from typing import Any
 
 from sqlalchemy import select, and_
@@ -466,7 +467,7 @@ async def _upsert_server_info(
 
     server.agent_version = report.get("agent_version") or server.agent_version
     server.storcli_version = report.get("storcli_version") or server.storcli_version
-    server.last_seen = datetime.now(timezone.utc)
+    server.last_seen = datetime.now(MSK)
     server.last_report = report
     server.server_info = system_info or server.server_info
 
