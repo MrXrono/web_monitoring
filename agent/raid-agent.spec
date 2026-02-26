@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.6
+%define version     1.1.7
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -315,6 +315,11 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.7-1
+- Add: scan_type field in smart_drive reports (megaraid, sat, nvme, scsi, etc.)
+- Fix: smartctl section no longer shows MegaRAID-managed drives on servers with hardware RAID
+- Fix: RAID controller virtual disk devices filtered by known vendor models
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.6-1
 - Add: Software RAID (mdadm) monitoring — /proc/mdstat + mdadm --detail
 - Add: SMART data collection via smartctl for standalone drives

@@ -118,13 +118,14 @@ def _extract_smart_attr(attrs: List[Dict], attr_id: int) -> Optional[int]:
     return None
 
 
-def collect_drive_smart(smartctl_path: str, device: str, dev_type: str = "") -> Optional[Dict[str, Any]]:
+def collect_drive_smart(smartctl_path: str, device: str, dev_type: str = "", scan_type: str = "") -> Optional[Dict[str, Any]]:
     """Collect full SMART data for a single drive.
 
     Args:
         smartctl_path: Path to smartctl binary.
         device: Device path (e.g. /dev/sda).
         dev_type: Device type hint (e.g. "sat", "nvme").
+        scan_type: Raw type string from smartctl --scan (e.g. "megaraid,0").
 
     Returns:
         Structured dict with SMART data, or None on failure.
@@ -213,6 +214,7 @@ def collect_drive_smart(smartctl_path: str, device: str, dev_type: str = "") -> 
 
     return {
         "device": device,
+        "scan_type": scan_type,
         "model": model_name or model_info,
         "serial_number": serial,
         "firmware_version": firmware,
@@ -245,7 +247,7 @@ def collect_all_smart(smartctl_path: str) -> List[Dict[str, Any]]:
     results = []
     for drv in drives:
         try:
-            report = collect_drive_smart(smartctl_path, drv["device"], drv.get("type", ""))
+            report = collect_drive_smart(smartctl_path, drv["device"], drv.get("type", ""), scan_type=drv.get("type", ""))
             if report:
                 results.append(report)
         except Exception:

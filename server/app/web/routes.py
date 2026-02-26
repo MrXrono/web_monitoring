@@ -825,16 +825,23 @@ async def server_detail_page(
             "bbu": bbu_info,
         })
 
-    # Count smartctl drives (covers ALL physical drives on the system,
-    # including those behind MegaRAID and standalone drives)
+    # Count smartctl drives — exclude MegaRAID-managed drives when controllers exist
     smart_drives_list = (srv.last_report or {}).get("smart_drives") or []
     if smart_drives_list:
-        smart_total = len(smart_drives_list)
-        smart_ok = sum(1 for d in smart_drives_list if d.get("smart_status") is not False)
-        # Use the larger count — smartctl sees all drives including non-RAID
-        if smart_total > pd_total:
-            pd_total = smart_total
-            pd_ok = smart_ok
+        if controllers_list:
+            # Filter out drives behind MegaRAID and controller VDs
+            _RC_KW = ("avago", "lsi", "megaraid", "perc", "broadcom")
+            smart_drives_list = [
+                d for d in smart_drives_list
+                if "megaraid" not in (d.get("scan_type") or "").lower()
+                and not any(kw in (d.get("model") or "").lower() for kw in _RC_KW)
+            ]
+        if smart_drives_list:
+            smart_total = len(smart_drives_list)
+            smart_ok = sum(1 for d in smart_drives_list if d.get("smart_status") is not False)
+            if smart_total > pd_total:
+                pd_total = smart_total
+                pd_ok = smart_ok
 
     uptime_str = "N/A"
     if srv.uptime_seconds:
@@ -2101,6 +2108,23 @@ async def server_pd_partial(
     smart_drives = []
     if srv and srv.last_report:
         smart_drives = srv.last_report.get("smart_drives") or []
+
+    # When MegaRAID controllers exist, filter out controller-related drives
+    # from the smartctl list (they're already shown in the MegaRAID section)
+    if pds and smart_drives:
+        _RAID_CTRL_KEYWORDS = ("avago", "lsi", "megaraid", "perc", "broadcom")
+        filtered = []
+        for d in smart_drives:
+            scan_t = (d.get("scan_type") or "").lower()
+            model_l = (d.get("model") or "").lower()
+            # Skip drives accessed via megaraid passthrough (/dev/bus/N -d megaraid,X)
+            if "megaraid" in scan_t:
+                continue
+            # Skip RAID controller virtual disk devices (e.g. AVAGO MR9361-8i)
+            if any(kw in model_l for kw in _RAID_CTRL_KEYWORDS):
+                continue
+            filtered.append(d)
+        smart_drives = filtered
 
     if not pds and not smart_drives:
         return HTMLResponse(
