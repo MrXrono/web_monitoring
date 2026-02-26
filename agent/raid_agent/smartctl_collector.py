@@ -510,6 +510,131 @@ def detect_software_raids() -> List[Dict[str, Any]]:
     return arrays
 
 
+def _collect_mdadm_platform() -> Dict[str, Any]:
+    """Collect RAID platform info via 'mdadm --detail-platform'.
+
+    Returns controller-level metadata (Intel VROC, etc.).
+    """
+    mdadm_path = shutil.which("mdadm")
+    if not mdadm_path:
+        return {}
+
+    try:
+        result = subprocess.run(
+            [mdadm_path, "--detail-platform"],
+            capture_output=True, text=True,
+            timeout=MDADM_TIMEOUT, check=False,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return {}
+
+    if result.returncode != 0 and not result.stdout.strip():
+        return {}
+
+    controllers = []
+    current = None
+
+    for line in result.stdout.splitlines():
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+
+        if ":" not in line_stripped:
+            continue
+
+        key, _, value = line_stripped.partition(":")
+        key = key.strip()
+        value = value.strip()
+
+        if key == "Platform":
+            if current:
+                controllers.append(current)
+            current = {"platform": value, "ports": []}
+        elif current is not None:
+            key_lower = key.lower()
+            if key_lower == "version":
+                current["version"] = value
+            elif key_lower == "raid levels":
+                current["raid_levels"] = value.split()
+            elif key_lower == "chunk sizes":
+                current["chunk_sizes"] = value
+            elif key_lower == "max disks":
+                current["max_disks"] = _safe_int(value)
+            elif key_lower == "max volumes":
+                current["max_volumes"] = value
+            elif key_lower == "i/o controller":
+                current["io_controller"] = value
+            elif key.startswith("Port"):
+                if "no device attached" not in value:
+                    current["ports"].append({"port": key, "device": value})
+
+    if current:
+        controllers.append(current)
+
+    if not controllers:
+        return {}
+
+    # Use the first controller with attached ports as primary, or first overall
+    primary = next((c for c in controllers if c.get("ports")), controllers[0])
+
+    platform_info = {
+        "platform": primary.get("platform", ""),
+        "version": primary.get("version", ""),
+        "raid_levels": primary.get("raid_levels", []),
+        "chunk_sizes": primary.get("chunk_sizes", ""),
+        "max_disks": primary.get("max_disks"),
+        "max_volumes": primary.get("max_volumes", ""),
+        "io_controllers": len(controllers),
+        "io_controller": primary.get("io_controller", ""),
+        "ports": primary.get("ports", []),
+    }
+
+    # mdadm version
+    try:
+        ver_result = subprocess.run(
+            [mdadm_path, "--version"],
+            capture_output=True, text=True,
+            timeout=10, check=False,
+        )
+        ver_out = (ver_result.stdout + ver_result.stderr).strip()
+        for part in ver_out.split():
+            if part.startswith("v") or part.startswith("-"):
+                continue
+            if "mdadm" in part.lower():
+                continue
+            if part[0:1] == "v":
+                platform_info["mdadm_version"] = part
+                break
+        if "mdadm_version" not in platform_info:
+            # "mdadm - v4.2 - 2021-12-30"
+            m = re.search(r'v[\d.]+', ver_out)
+            if m:
+                platform_info["mdadm_version"] = m.group(0)
+    except Exception:
+        pass
+
+    # Kernel md module version
+    try:
+        with open("/sys/module/md_mod/version", "r") as f:
+            platform_info["md_version"] = f.read().strip()
+    except OSError:
+        pass
+
+    # Personalities from /proc/mdstat
+    try:
+        with open("/proc/mdstat", "r") as f:
+            first_line = f.readline()
+            if "Personalities" in first_line:
+                personalities = re.findall(r'\[(\w+)\]', first_line)
+                if personalities:
+                    platform_info["personalities"] = personalities
+    except OSError:
+        pass
+
+    logger.debug("Collected mdadm platform info: %s", platform_info.get("platform", "N/A"))
+    return platform_info
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -521,10 +646,11 @@ def collect_software_raid(smartctl_path: str = "") -> Dict[str, Any]:
         smartctl_path: Path to smartctl binary (empty if unavailable).
 
     Returns:
-        Dict with 'software_raid_arrays' and 'smart_drives' keys.
+        Dict with 'software_raid_arrays', 'smart_drives' and 'mdadm_platform' keys.
     """
     sw_raids = []
     smart_drives = []
+    mdadm_platform = {}
 
     try:
         sw_raids = detect_software_raids()
@@ -536,7 +662,14 @@ def collect_software_raid(smartctl_path: str = "") -> Dict[str, Any]:
     except Exception:
         logger.warning("SMART data collection failed", exc_info=True)
 
+    if sw_raids:
+        try:
+            mdadm_platform = _collect_mdadm_platform()
+        except Exception:
+            logger.warning("mdadm platform collection failed", exc_info=True)
+
     return {
         "software_raid_arrays": sw_raids,
         "smart_drives": smart_drives,
+        "mdadm_platform": mdadm_platform,
     }

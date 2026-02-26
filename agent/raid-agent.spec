@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.1.10
+%define version     1.2.0
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -315,6 +315,11 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.2.0-1
+- Add: collect RAID platform info via mdadm --detail-platform (Intel VROC support)
+- Add: mdadm version, md module version, /proc/mdstat personalities collection
+- Web: Software RAID controller card shows platform details instead of duplicate array data
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.1.9-1
 - Fix: filter RAID controller virtual drives exposed as SCSI devices (/dev/sdX)
 - Detect by vendor/product fields (AVAGO, LSI, DELL PERC, Broadcom)

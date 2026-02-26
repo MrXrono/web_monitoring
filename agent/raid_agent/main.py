@@ -311,6 +311,7 @@ def run_collection_cycle(config, storcli_path, smartctl_path=""):
         sw_data = collect_software_raid(smartctl_path)
         report["software_raid"] = sw_data.get("software_raid_arrays", [])
         report["smart_drives"] = sw_data.get("smart_drives", [])
+        report["mdadm_platform"] = sw_data.get("mdadm_platform", {})
         logger.info(
             "Software RAID: %d arrays, SMART: %d drives",
             len(report["software_raid"]),
@@ -320,6 +321,7 @@ def run_collection_cycle(config, storcli_path, smartctl_path=""):
         logger.warning("Software RAID / SMART collection failed", exc_info=True)
         report["software_raid"] = []
         report["smart_drives"] = []
+        report["mdadm_platform"] = {}
 
     report["cpu_model"] = sys_info.get("cpu_model", "")
     report["cpu_cores"] = sys_info.get("cpu_cores", 0)
