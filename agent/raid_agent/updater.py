@@ -12,8 +12,13 @@ import subprocess
 from typing import Any, Dict, Optional, Union
 
 import requests
+import urllib3
 
 from raid_agent import __version__
+
+# Suppress SSL warnings — agent must work with self-signed certificates
+# (consistent with reporter.py behavior)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +72,9 @@ def check_update(
     """
     url = f"{server_url.rstrip('/')}/api/v1/agent/update/check"
 
-    verify = ca_bundle if (ca_bundle and os.path.isfile(ca_bundle)) else ssl_verify
+    # Always trust self-signed certificates (same as reporter.py)
+    # Use ca_bundle only if explicitly configured and file exists
+    verify = ca_bundle if (ca_bundle and os.path.isfile(ca_bundle)) else False
 
     logger.debug("Checking for updates: GET %s (current=%s)", url, current_version)
 
@@ -83,7 +90,7 @@ def check_update(
             timeout=30,
         )
     except requests.RequestException as exc:
-        logger.debug("Update check request failed: %s", exc)
+        logger.warning("Update check request failed: %s", exc)
         raise
 
     if response.status_code == 204:
@@ -157,7 +164,8 @@ def do_update(
     Returns:
         True if update was applied successfully, False otherwise.
     """
-    verify = ca_bundle if (ca_bundle and os.path.isfile(ca_bundle)) else ssl_verify
+    # Always trust self-signed certificates (same as reporter.py)
+    verify = ca_bundle if (ca_bundle and os.path.isfile(ca_bundle)) else False
 
     # First, get update metadata (including expected sha256)
     try:

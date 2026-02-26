@@ -426,7 +426,7 @@ def check_for_updates(config):
             ca_bundle=config.get("ca_bundle", ""),
         )
     except Exception:
-        logger.debug("Update check failed", exc_info=True)
+        logger.warning("Update check failed", exc_info=True)
         return
 
     if update_info is None:

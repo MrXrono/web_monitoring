@@ -403,7 +403,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="RAID Monitor",
         description="RAID Controller Monitoring System",
-        version="1.0.5",
+        version="1.0.6",
         lifespan=lifespan,
         docs_url="/api/docs" if settings.DEBUG else None,
         redoc_url="/api/redoc" if settings.DEBUG else None,

@@ -1,5 +1,5 @@
 %define name        raid-agent
-%define version     1.0.5
+%define version     1.0.6
 %define release     1%{?dist}
 %define install_dir /opt/raid-agent
 %define config_dir  /etc/raid-agent
@@ -206,6 +206,10 @@ fi
 %config(noreplace) %{_sysconfdir}/logrotate.d/raid-agent
 
 %changelog
+* Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.6-1
+- Fix: updater SSL verification — now trusts self-signed certs (same as reporter)
+- Update check failures now logged at WARNING level (were DEBUG — invisible)
+
 * Thu Feb 26 2026 RAID Monitor Team <admin@raid-monitor.example.com> - 1.0.5-1
 - All timestamps switched to Moscow timezone (MSK, UTC+3)
 - Docker containers configured with TZ=Europe/Moscow
