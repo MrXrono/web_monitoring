@@ -825,13 +825,16 @@ async def server_detail_page(
             "bbu": bbu_info,
         })
 
-    # Count smartctl drives when no hardware RAID controllers
-    smart_drives_list = []
-    if not all_pds and srv.last_report:
-        raw_smart = srv.last_report.get("smart_drives") or []
-        pd_total = len(raw_smart)
-        pd_ok = sum(1 for d in raw_smart if d.get("smart_status") is not False)
-        smart_drives_list = raw_smart
+    # Count smartctl drives (covers ALL physical drives on the system,
+    # including those behind MegaRAID and standalone drives)
+    smart_drives_list = (srv.last_report or {}).get("smart_drives") or []
+    if smart_drives_list:
+        smart_total = len(smart_drives_list)
+        smart_ok = sum(1 for d in smart_drives_list if d.get("smart_status") is not False)
+        # Use the larger count — smartctl sees all drives including non-RAID
+        if smart_total > pd_total:
+            pd_total = smart_total
+            pd_ok = smart_ok
 
     uptime_str = "N/A"
     if srv.uptime_seconds:
@@ -2091,7 +2094,23 @@ async def server_pd_partial(
         )
         pds = result.scalars().all()
 
-    # --- Hardware RAID physical drives (MegaRAID) ---
+        # Always load server for smartctl drives
+        srv_result = await db.execute(select(Server).where(Server.id == server_id))
+        srv = srv_result.scalar_one_or_none()
+
+    smart_drives = []
+    if srv and srv.last_report:
+        smart_drives = srv.last_report.get("smart_drives") or []
+
+    if not pds and not smart_drives:
+        return HTMLResponse(
+            f'<div class="text-center py-5 text-muted">'
+            f'<p>{_("No physical drives found for this server.")}</p></div>'
+        )
+
+    html_parts = []
+
+    # --- Section 1: Hardware RAID physical drives (MegaRAID) ---
     if pds:
         rows = []
         for pd in pds:
@@ -2142,87 +2161,74 @@ async def server_pd_partial(
               <td>{smart_icon}</td>
             </tr>''')
 
-        html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
+        section_title = f'<h6 class="fw-bold mb-2">MegaRAID {_("Physical Drives")}</h6>' if smart_drives else ''
+        html_parts.append(f'''{section_title}<div class="card border-0 shadow-sm"><div class="card-body p-0">
         <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
         <thead class="table-light"><tr>
           <th>EID:Slot</th><th>{_("State")}</th><th>DG</th><th>{_("Size")}</th>
           <th>{_("Model")}</th><th>{_("Type")}</th><th>{_("Interface")}</th><th>{_("Speed")}</th>
           <th>{_("Temp")}</th><th title="{_("Media Errors")}">Med Err</th>
           <th title="{_("Other Errors")}">Oth Err</th><th title="{_("Predictive Failure")}">Pred.Fail</th><th>SMART</th>
-        </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
-        return HTMLResponse(content=html)
+        </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>''')
 
-    # --- Fallback: smartctl drives from last_report (no hardware RAID) ---
-    async with async_session() as db:
-        result = await db.execute(select(Server).where(Server.id == server_id))
-        srv = result.scalar_one_or_none()
-
-    smart_drives = []
-    if srv and srv.last_report:
-        smart_drives = srv.last_report.get("smart_drives") or []
-
-    if not smart_drives:
-        return HTMLResponse(
-            f'<div class="text-center py-5 text-muted">'
-            f'<p>{_("No physical drives found for this server.")}</p></div>'
-        )
-
-    rows = []
-    for idx, d in enumerate(smart_drives):
-        device = d.get("device") or "N/A"
-        model = d.get("model") or "N/A"
-        serial = d.get("serial_number") or ""
-        firmware = d.get("firmware_version") or ""
-        dev_type = d.get("device_type") or ""
-        capacity = d.get("capacity") or "N/A"
-        temperature = d.get("temperature")
-        power_on = d.get("power_on_hours")
-        reallocated = d.get("reallocated_sectors")
-        pending = d.get("pending_sectors")
-        uncorrectable = d.get("uncorrectable_sectors")
-        smart_ok = d.get("smart_status")
-
-        smart_cls = "bg-success" if smart_ok else ("bg-danger" if smart_ok is False else "bg-secondary")
-        smart_txt = "PASSED" if smart_ok else ("FAILED" if smart_ok is False else "N/A")
-        temp_cls = "text-danger fw-bold" if (temperature or 0) > 50 else ("text-warning" if (temperature or 0) > 40 else "")
-        temp_str = f"{temperature} C" if temperature is not None else "N/A"
-        realloc_cls = " text-danger fw-bold" if (reallocated or 0) > 0 else ""
-        pending_cls = " text-warning fw-bold" if (pending or 0) > 0 else ""
-        uncorr_cls = " text-danger fw-bold" if (uncorrectable or 0) > 0 else ""
-        poh_str = f"{power_on:,}h" if power_on is not None else "N/A"
-
-        # Use device path as identifier for SMART modal
+    # --- Section 2: SMART drives from smartctl ---
+    if smart_drives:
         import urllib.parse
-        safe_device = urllib.parse.quote(device, safe="")
+        rows = []
+        for d in smart_drives:
+            device = d.get("device") or "N/A"
+            model = d.get("model") or "N/A"
+            serial = d.get("serial_number") or ""
+            firmware = d.get("firmware_version") or ""
+            dev_type = d.get("device_type") or ""
+            capacity = d.get("capacity") or "N/A"
+            temperature = d.get("temperature")
+            power_on = d.get("power_on_hours")
+            reallocated = d.get("reallocated_sectors")
+            pending = d.get("pending_sectors")
+            uncorrectable = d.get("uncorrectable_sectors")
+            smart_ok = d.get("smart_status")
 
-        rows.append(f'''<tr style="cursor: pointer;"
-              hx-get="/servers/{server_id}/smart-drive/{safe_device}"
-              hx-target="#smart-modal-body" hx-swap="innerHTML"
-              data-bs-toggle="modal" data-bs-target="#smartModal"
-              title="S/N: {serial}  FW: {firmware}">
-          <td class="fw-semibold">{device}</td>
-          <td>{dev_type}</td>
-          <td class="text-nowrap">{capacity}</td>
-          <td class="small">{model}</td>
-          <td><span class="badge {smart_cls}">{smart_txt}</span></td>
-          <td><span class="{temp_cls}">{temp_str}</span></td>
-          <td>{poh_str}</td>
-          <td class="{realloc_cls}">{reallocated if reallocated is not None else "N/A"}</td>
-          <td class="{pending_cls}">{pending if pending is not None else "N/A"}</td>
-          <td class="{uncorr_cls}">{uncorrectable if uncorrectable is not None else "N/A"}</td>
-        </tr>''')
+            smart_cls = "bg-success" if smart_ok else ("bg-danger" if smart_ok is False else "bg-secondary")
+            smart_txt = "PASSED" if smart_ok else ("FAILED" if smart_ok is False else "N/A")
+            temp_cls = "text-danger fw-bold" if (temperature or 0) > 50 else ("text-warning" if (temperature or 0) > 40 else "")
+            temp_str = f"{temperature} C" if temperature is not None else "N/A"
+            realloc_cls = " text-danger fw-bold" if (reallocated or 0) > 0 else ""
+            pending_cls = " text-warning fw-bold" if (pending or 0) > 0 else ""
+            uncorr_cls = " text-danger fw-bold" if (uncorrectable or 0) > 0 else ""
+            poh_str = f"{power_on:,}h" if power_on is not None else "N/A"
+            safe_device = urllib.parse.quote(device, safe="")
 
-    html = f'''<div class="card border-0 shadow-sm"><div class="card-body p-0">
-    <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
-    <thead class="table-light"><tr>
-      <th>{_("Device")}</th><th>{_("Type")}</th><th>{_("Size")}</th>
-      <th>{_("Model")}</th><th>SMART</th><th>{_("Temp")}</th>
-      <th title="{_("Power On Hours")}">POH</th>
-      <th title="{_("Reallocated Sectors")}">Realloc</th>
-      <th title="{_("Pending Sectors")}">Pending</th>
-      <th title="{_("Uncorrectable Sectors")}">Uncorr</th>
-    </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>'''
-    return HTMLResponse(content=html)
+            rows.append(f'''<tr style="cursor: pointer;"
+                  hx-get="/servers/{server_id}/smart-drive/{safe_device}"
+                  hx-target="#smart-modal-body" hx-swap="innerHTML"
+                  data-bs-toggle="modal" data-bs-target="#smartModal"
+                  title="S/N: {serial}  FW: {firmware}">
+              <td class="fw-semibold">{device}</td>
+              <td>{dev_type}</td>
+              <td class="text-nowrap">{capacity}</td>
+              <td class="small">{model}</td>
+              <td><span class="badge {smart_cls}">{smart_txt}</span></td>
+              <td><span class="{temp_cls}">{temp_str}</span></td>
+              <td>{poh_str}</td>
+              <td class="{realloc_cls}">{reallocated if reallocated is not None else "N/A"}</td>
+              <td class="{pending_cls}">{pending if pending is not None else "N/A"}</td>
+              <td class="{uncorr_cls}">{uncorrectable if uncorrectable is not None else "N/A"}</td>
+            </tr>''')
+
+        section_title = f'<h6 class="fw-bold mb-2 {"mt-4" if pds else ""}">SMART {_("Drives")} (smartctl)</h6>' if pds else ''
+        html_parts.append(f'''{section_title}<div class="card border-0 shadow-sm"><div class="card-body p-0">
+        <div class="table-responsive"><table class="table table-hover table-sm align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>{_("Device")}</th><th>{_("Type")}</th><th>{_("Size")}</th>
+          <th>{_("Model")}</th><th>SMART</th><th>{_("Temp")}</th>
+          <th title="{_("Power On Hours")}">POH</th>
+          <th title="{_("Reallocated Sectors")}">Realloc</th>
+          <th title="{_("Pending Sectors")}">Pending</th>
+          <th title="{_("Uncorrectable Sectors")}">Uncorr</th>
+        </tr></thead><tbody>{"".join(rows)}</tbody></table></div></div></div>''')
+
+    return HTMLResponse(content="".join(html_parts))
 
 
 @router.get(
