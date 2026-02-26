@@ -234,6 +234,9 @@ def collect_drive_smart(smartctl_path: str, device: str, dev_type: str = "", sca
 def collect_all_smart(smartctl_path: str) -> List[Dict[str, Any]]:
     """Scan all drives and collect SMART data for each.
 
+    Drives managed by a hardware RAID controller (MegaRAID passthrough)
+    are excluded — they are already reported via storcli64.
+
     Args:
         smartctl_path: Path to smartctl binary.
 
@@ -245,7 +248,13 @@ def collect_all_smart(smartctl_path: str) -> List[Dict[str, Any]]:
 
     drives = scan_drives(smartctl_path)
     results = []
+    skipped = 0
     for drv in drives:
+        drv_type = drv.get("type", "").lower()
+        if "megaraid" in drv_type:
+            skipped += 1
+            logger.debug("Skipping MegaRAID-managed drive: %s (type=%s)", drv["device"], drv_type)
+            continue
         try:
             report = collect_drive_smart(smartctl_path, drv["device"], drv.get("type", ""), scan_type=drv.get("type", ""))
             if report:
@@ -253,7 +262,7 @@ def collect_all_smart(smartctl_path: str) -> List[Dict[str, Any]]:
         except Exception:
             logger.warning("Failed to collect SMART for %s", drv["device"], exc_info=True)
 
-    logger.info("Collected SMART data for %d/%d drives", len(results), len(drives))
+    logger.info("Collected SMART data for %d/%d drives (skipped %d MegaRAID)", len(results), len(drives), skipped)
     return results
 
 
