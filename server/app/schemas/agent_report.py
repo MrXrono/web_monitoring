@@ -185,6 +185,7 @@ class AgentReportPayload(BaseModel):
     controllers: list[ControllerReport] = []
     software_raid: list[SoftwareRaidReport] = []
     smart_drives: list[SmartDriveReport] = []
+    mdadm_platform: Optional[dict] = None
 
 
 class AgentConfigResponse(BaseModel):
