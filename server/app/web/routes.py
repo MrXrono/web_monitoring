@@ -6,6 +6,7 @@ All Jinja2 template rendering routes for the frontend.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from app.config import MSK
@@ -856,7 +857,7 @@ async def server_detail_page(
             "bbu": bbu_info,
         })
 
-    # Count smartctl drives — exclude MegaRAID-managed drives when controllers exist
+    # Count smartctl drives — exclude MegaRAID-managed and SW RAID member drives
     smart_drives_list = (srv.last_report or {}).get("smart_drives") or []
     if smart_drives_list:
         if controllers_list:
@@ -867,6 +868,24 @@ async def server_detail_page(
                 if "megaraid" not in (d.get("scan_type") or "").lower()
                 and not any(kw in (d.get("model") or "").lower() for kw in _RC_KW)
             ]
+        # Exclude drives that are software RAID members (already counted above)
+        if srv.software_raids:
+            swraid_member_devs = set()
+            for sr in srv.software_raids:
+                for m in (sr.member_devices or []):
+                    dev = m.get("device", "") if isinstance(m, dict) else ""
+                    if dev:
+                        # Normalize: /dev/sda1 -> sda, /dev/nvme0n1p1 -> nvme0n1
+                        base = dev.rsplit("/", 1)[-1]
+                        # Strip partition suffixes
+                        base = re.sub(r"p?\d+$", "", base)
+                        swraid_member_devs.add(base)
+            if swraid_member_devs:
+                smart_drives_list = [
+                    d for d in smart_drives_list
+                    if re.sub(r"p?\d+$", "", (d.get("device") or "").rsplit("/", 1)[-1])
+                    not in swraid_member_devs
+                ]
         if smart_drives_list:
             smart_total = len(smart_drives_list)
             smart_ok = sum(1 for d in smart_drives_list if d.get("smart_status") is not False)
