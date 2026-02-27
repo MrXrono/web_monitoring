@@ -424,6 +424,28 @@ async def receive_report(
         if sw_report.failed_devices and sw_report.failed_devices > 0:
             status = "critical"
 
+    # Check smartctl drives (non-MegaRAID)
+    _RC_KW = ("avago", "lsi", "megaraid", "perc", "broadcom")
+    for sd in payload.smart_drives:
+        # Skip MegaRAID-managed drives (already covered by controller checks)
+        if sd.scan_type and "megaraid" in sd.scan_type.lower():
+            continue
+        if sd.model and any(kw in sd.model.lower() for kw in _RC_KW):
+            continue
+        # SMART overall health failed → critical
+        if sd.smart_status is False:
+            status = "critical"
+        # Reallocated, pending, uncorrectable sectors or overheating → warning
+        if status != "critical":
+            if (sd.reallocated_sectors or 0) > 0:
+                status = "warning"
+            elif (sd.pending_sectors or 0) > 0:
+                status = "warning"
+            elif (sd.uncorrectable_sectors or 0) > 0:
+                status = "warning"
+            elif (sd.temperature or 0) > 55:
+                status = "warning"
+
     server.status = status
 
     await db.commit()

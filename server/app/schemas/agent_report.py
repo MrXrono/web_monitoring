@@ -164,6 +164,7 @@ class SmartDriveReport(BaseModel):
     reallocated_sectors: Optional[int] = None
     pending_sectors: Optional[int] = None
     uncorrectable_sectors: Optional[int] = None
+    scan_type: Optional[str] = None
     smart_attributes: Optional[list[dict]] = None
     smart_data: Optional[dict] = None
 
