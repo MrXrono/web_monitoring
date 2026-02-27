@@ -546,6 +546,7 @@ async def dashboard_page(
         "servers_online": 0,
         "servers_total": 0,
         "controllers_total": 0,
+        "swraid_total": 0,
         "vd_ok": 0,
         "vd_total": 0,
         "vd_problem": 0,
@@ -740,6 +741,7 @@ async def dashboard_page(
 
             # Accumulate global stats
             stats["controllers_total"] += ctrl_count
+            stats["swraid_total"] += len(srv.software_raids or [])
             stats["vd_total"] += vd_total
             stats["vd_ok"] += vd_ok
             stats["pd_total"] += pd_total

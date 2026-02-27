@@ -42,7 +42,12 @@
             </div>
             <div>
               <div class="text-muted small">{{ _('Controllers') }}</div>
-              <div class="fw-bold fs-4">{{ stats.controllers_total | default(0) }}</div>
+              <div class="fw-bold fs-4">
+                {{ stats.controllers_total | default(0) }}
+                {% if stats.swraid_total is defined and stats.swraid_total > 0 %}
+                <span class="text-muted fs-6">/ </span><span class="fs-5" title="{{ _('Software RAID') }}">{{ stats.swraid_total }} SW</span>
+                {% endif %}
+              </div>
             </div>
           </div>
         </div>
