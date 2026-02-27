@@ -670,6 +670,21 @@ async def dashboard_page(
                     # Drive overheating
                     if pd.temperature and pd.temperature > 55:
                         health_issues.append(f"PD {pd.enclosure_id}:{pd.slot_number} " + _("overheating") + f" ({pd.temperature}C)")
+            # Software RAID health checks
+            for sr in (srv.software_raids or []):
+                sr_state = (sr.state or "").lower()
+                if sr_state in ("degraded", "inactive"):
+                    health_issues.append(f"{sr.array_name}: " + _("degraded"))
+                elif "rebuild" in sr_state or "recover" in sr_state or "resync" in sr_state:
+                    progress = f" ({sr.rebuild_progress:.0f}%)" if sr.rebuild_progress else ""
+                    health_issues.append(f"{sr.array_name}: " + _("rebuilding") + progress)
+                if (sr.failed_devices or 0) > 0:
+                    health_issues.append(f"{sr.array_name}: {sr.failed_devices} " + _("failed devices"))
+                for m in (sr.member_devices or []):
+                    if isinstance(m, dict):
+                        m_state = (m.get("state") or "").lower()
+                        if "faulty" in m_state or "removed" in m_state:
+                            health_issues.append(f"{sr.array_name} {m.get('device', '?')}: " + _("faulty"))
             # Deduplicate while preserving order
             seen = set()
             unique_issues = []
