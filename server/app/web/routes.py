@@ -685,6 +685,31 @@ async def dashboard_page(
                         m_state = (m.get("state") or "").lower()
                         if "faulty" in m_state or "removed" in m_state:
                             health_issues.append(f"{sr.array_name} {m.get('device', '?')}: " + _("faulty"))
+            # Smartctl drive health checks (SW RAID members and standalone drives)
+            _smart_drives = (srv.last_report or {}).get("smart_drives") or []
+            _RC_KW = ("avago", "lsi", "megaraid", "perc", "broadcom")
+            for sd in _smart_drives:
+                # Skip MegaRAID-managed drives (already covered above)
+                if "megaraid" in (sd.get("scan_type") or "").lower():
+                    continue
+                if any(kw in (sd.get("model") or "").lower() for kw in _RC_KW):
+                    continue
+                dev_name = (sd.get("device") or "").rsplit("/", 1)[-1] or "?"
+                # SMART overall health failed
+                if sd.get("smart_status") is False:
+                    health_issues.append(f"{dev_name} SMART " + _("alert"))
+                # Reallocated sectors
+                if (sd.get("reallocated_sectors") or 0) > 0:
+                    health_issues.append(f"{dev_name}: {sd['reallocated_sectors']} " + _("reallocated sectors"))
+                # Pending sectors
+                if (sd.get("pending_sectors") or 0) > 0:
+                    health_issues.append(f"{dev_name}: {sd['pending_sectors']} " + _("pending sectors"))
+                # Uncorrectable sectors
+                if (sd.get("uncorrectable_sectors") or 0) > 0:
+                    health_issues.append(f"{dev_name}: {sd['uncorrectable_sectors']} " + _("uncorrectable sectors"))
+                # Drive overheating
+                if (sd.get("temperature") or 0) > 55:
+                    health_issues.append(f"{dev_name} " + _("overheating") + f" ({sd['temperature']}C)")
             # Deduplicate while preserving order
             seen = set()
             unique_issues = []
