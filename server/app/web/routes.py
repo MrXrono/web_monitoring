@@ -694,6 +694,7 @@ async def dashboard_page(
                 "vd_ok": vd_ok,
                 "pd_total": pd_total,
                 "pd_ok": pd_ok,
+                "swraid_count": len(srv.software_raids or []),
                 "health_status": health_status,
             })
 
