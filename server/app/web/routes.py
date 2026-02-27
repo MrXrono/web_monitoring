@@ -560,6 +560,7 @@ async def dashboard_page(
             selectinload(Server.controllers).selectinload(Controller.virtual_drives),
             selectinload(Server.controllers).selectinload(Controller.physical_drives),
             selectinload(Server.controllers).selectinload(Controller.bbu),
+            selectinload(Server.software_raids),
         )
         if search:
             query = query.where(
@@ -611,6 +612,19 @@ async def dashboard_page(
                 for pd in (ctrl.physical_drives or []):
                     pd_total += 1
                     if pd.state and pd.state.lower() in ("online", "onln", "ugood", "jbod", "ghs", "dhs"):
+                        pd_ok += 1
+
+            # Include software RAID arrays as virtual drives and their members as physical drives
+            for sr in (srv.software_raids or []):
+                vd_total += 1
+                sr_state = (sr.state or "").lower()
+                if sr_state in ("active", "clean", "active, checking", "active, resyncing"):
+                    vd_ok += 1
+                members = sr.member_devices or []
+                for m in members:
+                    pd_total += 1
+                    m_state = (m.get("state") or "").lower() if isinstance(m, dict) else ""
+                    if "active" in m_state or "sync" in m_state:
                         pd_ok += 1
 
             # Build health status summary
@@ -784,6 +798,21 @@ async def server_detail_page(
             if pd.state and pd.state.lower() in ("online", "onln", "ugood", "jbod", "ghs", "dhs"):
                 pd_ok += 1
             all_pds.append(pd)
+
+    # Include software RAID arrays as virtual drives and their members as physical drives
+    for sr in (srv.software_raids or []):
+        vd_total += 1
+        sr_state = (sr.state or "").lower()
+        if sr_state in ("active", "clean", "active, checking", "active, resyncing"):
+            vd_ok += 1
+        members = sr.member_devices or []
+        for m in members:
+            pd_total += 1
+            m_state = (m.get("state") or "").lower() if isinstance(m, dict) else ""
+            if "active" in m_state or "sync" in m_state:
+                pd_ok += 1
+
+    for ctrl in (srv.controllers or []):
         bbu_info = None
         if ctrl.bbu:
             is_cv = ctrl.bbu.bbu_type and ctrl.bbu.bbu_type.upper().startswith("CVPM")
