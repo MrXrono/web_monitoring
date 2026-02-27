@@ -692,7 +692,9 @@ async def dashboard_page(
         # Global server stats (unfiltered)
         total_servers = (await db.execute(select(func.count(Server.id)))).scalar() or 0
         online_servers = (await db.execute(
-            select(func.count(Server.id)).where(Server.status == "online")
+            select(func.count(Server.id)).where(
+                Server.status.in_(["online", "warning", "critical"])
+            )
         )).scalar() or 0
 
         stats["servers_total"] = total_servers
